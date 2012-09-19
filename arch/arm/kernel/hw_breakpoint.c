@@ -247,7 +247,6 @@ static int enable_monitor_mode(void)
 	ret = halting_mode_enabled();
 	if (ret)
 		goto out;
-	}
 
 	/* If monitor mode is already enabled, just return. */
 	if (dscr & ARM_DSCR_MDBGEN)
