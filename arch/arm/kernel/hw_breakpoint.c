@@ -234,7 +234,6 @@ static int enable_monitor_mode(void)
 		"halting debug mode enabled. Unable to access hardware resources.\n")) {
 		ret = -EPERM;
 		goto out;
-	}
 
 	/* If monitor mode is already enabled, just return. */
 	if (dscr & ARM_DSCR_MDBGEN)
