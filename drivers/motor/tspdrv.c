@@ -298,6 +298,8 @@ static __devinit int tspdrv_probe(struct platform_device *pdev)
 	struct vibrator_platform_data *pdata;
 	int ret = 0, i;   /* initialized below */
 
+	create_vibrator_sysfs();
+
 	DbgOut((KERN_INFO "tspdrv: tspdrv_probe.\n"));
 
 	pdata = pdev->dev.platform_data;
