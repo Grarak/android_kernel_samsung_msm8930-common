@@ -1,3 +1,2 @@
 kernel.zip
-ramdisk.gz
-boot.img
+zImage
