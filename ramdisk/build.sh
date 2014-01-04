@@ -23,3 +23,4 @@ zip -r kernel.zip META-INF boot.img
 mv -v kernel.zip ../
 cd ..
 adb push kernel.zip /sdcard/
+rm -f out/boot.img
