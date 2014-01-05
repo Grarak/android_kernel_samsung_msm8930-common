@@ -190,7 +190,7 @@ static void tz_idle(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
 	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
 	struct tz_priv *priv = pwrscale->priv;
 	struct kgsl_power_stats stats;
-	int val, idle;
+	int val, idle = 0;
 
 	/* In "performance" mode the clock speed always stays
 	   the same */
@@ -240,8 +240,6 @@ static void tz_idle(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
 			idle = (idle > 0) ? idle : 0;
 			val = __secure_tz_entry(TZ_UPDATE_ID, idle, device->id);
 		}
-		priv->bin.total_time = 0;
-		priv->bin.busy_time = 0;
 	}	
 #else
 	if (priv->bin.busy_time > CEILING) {
@@ -251,13 +249,11 @@ static void tz_idle(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
 		idle = (idle > 0) ? idle : 0;
 		val = __secure_tz_entry(TZ_UPDATE_ID, idle, device->id);
 	}
+#endif
 	priv->bin.total_time = 0;
 	priv->bin.busy_time = 0;
-#endif
-	if (val) {
-		kgsl_pwrctrl_pwrlevel_change(device,
-					     pwr->active_pwrlevel + val);
-	}
+	if (val)
+		kgsl_pwrctrl_pwrlevel_change(device, pwr->active_pwrlevel + val);
 }
 
 static void tz_busy(struct kgsl_device *device,
