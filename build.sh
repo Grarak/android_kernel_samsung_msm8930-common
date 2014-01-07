@@ -11,7 +11,7 @@ bldcya=${txtbld}$(tput setaf 6) # cyan
 
 txtrst=$(tput sgr0) # Reset
 
-version=0.3
+version=0.4
 
 DATE_START=$(date +"%s")
 
@@ -69,7 +69,7 @@ nice -n 10 make -j4 ARCH=arm
 ###########################################################################
 if [ -e arch/arm/boot/zImage ]; then
 	cp -f arch/arm/boot/zImage ramdisk
-    rm -rf ramdisk/boot.img-ramdisk/lib/modules/*.ko
+    rm -f ramdisk/boot.img-ramdisk/lib/modules/*.ko
     find -name "*.ko" -exec cp -f {} ramdisk/boot.img-ramdisk/lib/modules \;
 
 	cd ramdisk
