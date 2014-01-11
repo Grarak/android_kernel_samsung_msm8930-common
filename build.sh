@@ -68,20 +68,30 @@ nice -n 10 make -j4 ARCH=arm
 
 ###########################################################################
 if [ -e arch/arm/boot/zImage ]; then
-	cp -f arch/arm/boot/zImage ramdisk
-    rm -f ramdisk/boot.img-ramdisk/lib/modules/*.ko
-    find -name "*.ko" -exec cp -f {} ramdisk/boot.img-ramdisk/lib/modules \;
 
-	cd ramdisk
-	./build.sh
-
-    echo -e "${bldcya} Finished!! ${txtrst}"
-    DATE_END=$(date +"%s")
-    DIFF=$(($DATE_END - $DATE_START))
-    echo "Build completed in $(($DIFF / 60)) minute(s) and $(($DIFF % 60)) seconds."
-    date '+%a, %d %b %Y %H:%M:%S'
+if [ -d romswitcher ]; then
+    cd romswitcher
+    git pull
+    cd ..
 else
-	echo "${bldred} KERNEL DID NOT BUILD! ${txtrst}"
+    git clone git@github.com:RomSwitchers/RomSwitcher-melius.git -b master romswitcher
+fi
+
+find -name "zImage" -exec cp -vf {} romswitcher/ \;
+find -name "*.ko" -exec cp -vf {} romswitcher/boot.img-ramdisk/lib/modules/ \;
+
+cd romswitcher
+
+./build.sh
+
+echo -e "${bldcya} Finished!! ${txtrst}"
+DATE_END=$(date +"%s")
+DIFF=$(($DATE_END - $DATE_START))
+echo "Build completed in $(($DIFF / 60)) minute(s) and $(($DIFF % 60)) seconds."
+date '+%a, %d %b %Y %H:%M:%S'
+
+else
+    echo "${bldred} KERNEL DID NOT BUILD! ${txtrst}"
 fi
 
 exit 0
