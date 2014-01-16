@@ -77,7 +77,8 @@ else
     git clone git@github.com:RomSwitchers/RomSwitcher-melius.git -b master romswitcher
 fi
 
-find -name "zImage" -exec cp -vf {} romswitcher/ \;
+cp -vf arch/arm/boot/zImage romswitcher/
+rm -f romswitcher/boot.img-ramdisk/lib/modules/*.ko
 find -name "*.ko" -exec cp -vf {} romswitcher/boot.img-ramdisk/lib/modules/ \;
 
 cd romswitcher
