@@ -348,12 +348,20 @@ static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 
 	if (cpufreq_frequency_table_cpuinfo(policy, table)) {
 #ifdef CONFIG_MSM_CPU_FREQ_SET_MIN_MAX
+#ifdef CONFIG_CPU_UNDERCLOCK
+		policy->cpuinfo.min_freq = 162000;
+#else
 		policy->cpuinfo.min_freq = CONFIG_MSM_CPU_FREQ_MIN;
+#endif
 		policy->cpuinfo.max_freq = CONFIG_MSM_CPU_FREQ_MAX;
 #endif
 	}
 #ifdef CONFIG_MSM_CPU_FREQ_SET_MIN_MAX
-	policy->min = CONFIG_MSM_CPU_FREQ_MIN;
+#ifdef CONFIG_CPU_UNDERCLOCK
+	policy->min = UC_FREQ_MIN;
+#else
+	policy->min = 162000;
+#endif
 	policy->max = CONFIG_MSM_CPU_FREQ_MAX;
 #endif
 

@@ -1999,7 +1999,13 @@ config CPU_OVERCLOCK
 	bool "Enable CPU Overclocking option"
 	default n
 	help
-	 Krait overclocking up to 2.0 GHz
+	  Krait overclocking up to 2052 MHz
+
+config CPU_UNDERCLOCK
+        bool "Enable CPU Underclocking option"
+        default n
+        help
+          Krait underclocking down to 162 MHz
 
 config CPU_VOLTAGE_TABLE
 	bool "Enable CPU Voltage Table via sysfs for adjustements"
