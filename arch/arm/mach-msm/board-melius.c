@@ -165,10 +165,6 @@
 #include <linux/power_supply.h>
 #include <linux/battery/sec_charger.h>
 
-#ifdef CONFIG_CPU_FREQ_GOV_INTELLIDEMAND
-int id_set_two_phase_freq(int cpufreq);
-#endif
-
 /*
 #define SEC_CHARGER_I2C_SLAVEADDR	0x6B
 */
@@ -2124,17 +2120,6 @@ static void __init msm8930_reserve(void)
 
 static void __init msm8930_allocate_memory_regions(void)
 {
-#ifdef CONFIG_KEXEC_HARDBOOT
-    // Reserve space for hardboot page at the end of first system ram block
-    struct membank* bank = &meminfo.bank[0];
-    phys_addr_t start = bank->start + bank->size - SZ_1M;
-    int ret = memblock_remove(start, SZ_1M);
-    if(!ret)
-        pr_info("Hardboot page reserved at 0x%X\n", start);
-    else
-        pr_err("Failed to reserve space for hardboot page at 0x%X!\n", start);
-#endif
-
 	msm8930_allocate_fb_region();
 }
 
@@ -5485,9 +5470,6 @@ void __init msm8930_melius_init(void)
 	platform_add_devices(express2_devices, ARRAY_SIZE(express2_devices));
 #ifdef CONFIG_MSM_CAMERA
 	msm8930_init_cam();
-#endif
-#ifdef CONFIG_CPU_FREQ_GOV_INTELLIDEMAND
-    id_set_two_phase_freq(1566000);
 #endif
 #ifdef CONFIG_SAMSUNG_CMC624
 	platform_device_register(&cmc624_i2c_gpio_device);

@@ -32,7 +32,7 @@ modules.builtin
 *.lzo
 *.patch
 *.gcno
-romswitcher
+melius
 
 #
 # Top-level generic files

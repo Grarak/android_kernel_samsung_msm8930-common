@@ -1,0 +1,24 @@
+if [ -f $1 ];then
+	if [[ ! -z $2 ]]; then
+		case $2 in
+			standard)
+				echo 0 > $1 ;;
+			dynamic)
+				echo 1 > $1 ;;
+			movie)
+				echo 2 > $1 ;;
+			natural)
+				echo 3 > $1 ;;
+		esac
+	fi
+
+	if grep -q STANDARD $1 ; then
+		echo standard
+	elif grep -q DYNAMIC $1 ; then
+		echo dynamic
+	elif grep -q MOVIE $1 ; then
+		echo movie
+	elif grep -q NATURAL $1 ; then
+		echo natural
+	fi
+fi
