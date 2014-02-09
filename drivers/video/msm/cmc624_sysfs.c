@@ -591,6 +591,56 @@ static ssize_t mdnie_dump_store(struct device *dev,
 static DEVICE_ATTR(mdnie_dump, 0664, mdnie_dump_show, mdnie_dump_store);
 #endif
 
+/* ##########################################################
+ * #
+ * # MDNIE Negative Sysfs node
+ * #
+ * ##########################################################*/
+
+static bool negative_on = false;
+
+static ssize_t negative_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	return sprintf(buf, "%d\n", negative_on ? 1 : 0);
+}
+
+static ssize_t negative_store(struct device *dev,
+			struct device_attribute *attr,
+			const char *buf, size_t size)
+{
+	unsigned int value;
+	int ret;
+
+	if(sscanf(buf, "%u\n", &value) == 1) {
+		if (value == 1) {
+			ret = apply_negative_tune_value(value, cmc624_state.cabc_mode);
+			if (ret != 0) {
+				pr_err("[CMC624:ERROR] ERROR : set negative value failed.\n");
+			}
+			cmc624_state.blind = ACCESSIBILITY_OFF;
+			cmc624_state.negative = value;
+			negative_on = true;
+		} else {
+			ret = apply_blind_tune_value(value, cmc624_state.cabc_mode);
+			if (ret != 0) {
+				pr_err("[CMC624:ERROR] ERROR : set blind value failed.\n");
+			}
+			ret = apply_negative_tune_value(value, cmc624_state.cabc_mode);
+			if (ret != 0) {
+				pr_err("[CMC624:ERROR] ERROR : set negative value failed.\n");
+			}
+			negative_on = false;
+		}
+	} else {
+		pr_info("%s: invalid input\n", __FUNCTION__);
+	}
+
+	return size;
+}
+static DEVICE_ATTR(negative, 0664, negative_show, negative_store);
+
 int cmc624_sysfs_init(void)
 {
 
@@ -679,5 +729,11 @@ int cmc624_sysfs_init(void)
 		ret = -1;
 	}
 #endif
+
+	if (device_create_file(tune_mdnie_dev_cmc, &dev_attr_negative) < 0) {
+		pr_debug("[CMC624:ERROR] device_create_file(%s)\n",\
+			dev_attr_negative.attr.name);
+		ret = -1;
+	}
 	return 0;
 }
