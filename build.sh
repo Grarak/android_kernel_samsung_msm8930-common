@@ -93,15 +93,16 @@ buildramdisk() {
 	echo "Build completed in $(($DIFF / 60)) minute(s) and $(($DIFF % 60)) seconds."
 	date '+%a, %d %b %Y %H:%M:%S'
 }
+
 if [ -e arch/arm/boot/zImage ]; then
 
 	if [ "$variant" != "2" ]; then
-		if [ -d romswitcher ]; then
+		if [ -d melius ]; then
 			cd melius
 			git pull
 			cd ..
 		else
-			git clone git@github.com:RomSwitchers/RomSwitcher-$1.git -b master melius
+			git clone git@github.com:RomSwitchers/RomSwitcher-melius.git -b master melius
 		fi
 		buildramdisk melius
 	else
