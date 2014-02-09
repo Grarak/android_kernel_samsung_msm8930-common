@@ -732,8 +732,7 @@ static ssize_t f2fs_direct_IO(int rw, struct kiocb *iocb,
 		return 0;
 
 	/* Needs synchronization with the cleaner */
-	return blockdev_direct_IO(rw, iocb, inode, iov, offset, nr_segs,
-						  get_data_block_ro);
+	return blockdev_direct_IO(rw, iocb, inode, iov, offset, nr_segs, get_data_block_ro);
 }
 
 static void f2fs_invalidate_data_page(struct page *page, unsigned long offset)
