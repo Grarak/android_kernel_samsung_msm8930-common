@@ -328,6 +328,14 @@ int msm_cpufreq_set_freq_limits(uint32_t cpu, uint32_t min, uint32_t max)
 }
 EXPORT_SYMBOL(msm_cpufreq_set_freq_limits);
 
+#ifdef CONFIG_CPU_UNDERCLOCK
+#define UC_FREQ_MIN 162000
+#endif
+
+#ifdef CONFIG_CPU_OVERCLOCK
+#define OC_FREQ_MAX 2052000
+#endif
+
 static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 {
 	int cur_freq;
@@ -349,30 +357,33 @@ static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 	if (cpufreq_frequency_table_cpuinfo(policy, table)) {
 #ifdef CONFIG_MSM_CPU_FREQ_SET_MIN_MAX
 #ifdef CONFIG_CPU_UNDERCLOCK
-		policy->cpuinfo.min_freq = 162000;
+		policy->cpuinfo.min_freq = UC_FREQ_MIN;
 #else
 		policy->cpuinfo.min_freq = CONFIG_MSM_CPU_FREQ_MIN;
 #endif
+#ifdef CONFIG_CPU_OVERCLOCK
+		policy->cpuinfo.max_freq = OC_FREQ_MAX;
+#else
 		policy->cpuinfo.max_freq = CONFIG_MSM_CPU_FREQ_MAX;
+#endif
 #endif
 	}
 #ifdef CONFIG_MSM_CPU_FREQ_SET_MIN_MAX
 #ifdef CONFIG_CPU_UNDERCLOCK
 	policy->min = UC_FREQ_MIN;
 #else
-	policy->min = 162000;
+	policy->min = CONFIG_MSM_CPU_FREQ_MIN;
 #endif
+#ifdef CONFIG_CPU_OVERCLOCK
+	policy->max = OC_FREQ_MAX;
+#else
 	policy->max = CONFIG_MSM_CPU_FREQ_MAX;
+#endif
 #endif
 
 #ifdef CONFIG_SEC_DVFS
 	cpuinfo_max_freq = policy->cpuinfo.max_freq;
 	cpuinfo_min_freq = policy->cpuinfo.min_freq;
-#endif
-    
-#ifdef CONFIG_CPU_OVERCLOCK
-    policy->max = 1728000;
-    policy->min = 384000;
 #endif
 
 	cur_freq = acpuclk_get_rate(policy->cpu);
@@ -540,7 +551,7 @@ static int __init msm_cpufreq_register(void)
 		return PTR_ERR(msm_cpufreq_wq);
 
 	register_hotcpu_notifier(&msm_cpufreq_cpu_notifier);
-    register_early_suspend(&msm_cpu_early_suspend_handler);
+	register_early_suspend(&msm_cpu_early_suspend_handler);
 
 	return cpufreq_register_driver(&msm_cpufreq_driver);
 }
