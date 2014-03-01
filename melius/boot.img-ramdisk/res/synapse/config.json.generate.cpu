@@ -7,7 +7,19 @@ cat << CTAG
     name:CPU,
     elements:[
 	{ STitleBar:{
+		title:"Temperature"
+	}},
+	{ SLiveLabel:{
+		refresh:500,
+		action:"live temp"
+	}},
+	{ STitleBar:{
 		title:"CPU Frequency scaling"
+	}},
+	{ SLiveLabel:{
+		title:"CPU Frequency",
+		refresh:500,
+		action:"live cpufreq"
 	}},
 	{ SSeekBar:{
        		title:"CPU Max Frequency",

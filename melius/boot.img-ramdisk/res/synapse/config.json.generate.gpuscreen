@@ -7,6 +7,11 @@ cat << CTAG
 	{ STitleBar:{
 		title:"GPU Frequency scaling"
 	}},
+	{ SLiveLabel:{
+		title:"GPU Frequency",
+		refresh:500,
+		action:"live gpufreq"
+	}},
 	{ SSeekBar:{
        		title:"GPU Max Frequency",
                 unit:"MHz", weight:0.000001,
