@@ -81,7 +81,7 @@ nice -n 10 make -j4 ARCH=arm
 buildramdisk() {
 	cp -vf arch/arm/boot/zImage $1/
 	rm -f $1/boot.img-ramdisk/lib/modules/*.ko
-	find -name "*.ko" -exec cp -vf {} $1/boot.img-ramdisk/lib/modules/ \;
+	find -name "*.ko" -exec cp -f {} $1/boot.img-ramdisk/lib/modules \;
 
 	cd $1
 
@@ -97,13 +97,6 @@ buildramdisk() {
 if [ -e arch/arm/boot/zImage ]; then
 
 	if [ "$variant" != "2" ]; then
-		if [ -d melius ]; then
-			cd melius
-			git pull
-			cd ..
-		else
-			git clone git@github.com:RomSwitchers/RomSwitcher-melius.git -b master melius
-		fi
 		buildramdisk melius
 	else
 		buildramdisk serrano

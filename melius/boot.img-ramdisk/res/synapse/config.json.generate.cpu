@@ -1,5 +1,7 @@
 #!/sbin/busybox sh
 
+MPS='0:"Disabled", 1:"1", 2:"2"'
+
 cat << CTAG
 {
     name:CPU,
@@ -9,7 +11,7 @@ cat << CTAG
 	}},
 	{ SSeekBar:{
        		title:"CPU Max Frequency",
-		description:"Set the maximum freqency the CPU scales up to.",
+		description:"Set the maximum frequency the CPU scales up to.",
 		default:`cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq`,
 		action:"generic /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq",
 		values:{
@@ -23,7 +25,7 @@ cat << CTAG
 	}},
 	{ SSeekBar:{
        		title:"CPU Min Frequency",
-		description:"Set the minimum freqency the CPU scales down to.",
+		description:"Set the minimum frequency the CPU scales down to.",
 		default:`cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq`,
 		action:"generic /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq",
 		values:{
@@ -52,12 +54,16 @@ cat << CTAG
         }},
 	{ SPane:{
                 title:"Multicore Power Saving",
-                description:"Try to group tasks into the least cores possible. The higher value, the more aggressive"
+                description:"Try to group tasks into the least cores possible. The higher it is, the more the aggression will be."
         }},
 	{ SSeekBar:{
-                min:0, max:2,
-		default:`cat /sys/devices/system/cpu/sched_mc_power_savings`,
-                action:"generic /sys/devices/system/cpu/sched_mc_power_savings"
+                default:`cat /sys/devices/system/cpu/sched_mc_power_savings`,
+                action:"generic /sys/devices/system/cpu/sched_mc_power_savings",
+		values:{
+`
+			echo $MPS
+`
+		}
         }},
 	{ SPane:{
                 title:"CPU Voltage Control",
@@ -69,9 +75,24 @@ while read FREQ UVOLT; do
 	default:'$UVOLT',
 	title:"'\`expr ${FREQ//\:/} \/ 1000\`' MHz",
 	action:"cpuvolt '${FREQ}'",
-	unit:"mV", weight:0.001, min:700000, step:6250, max:1362500 }},'
+	unit:"mV", weight:0.001, min:800000, step:6250, max:1562500 }},'
 done < /sys/devices/system/cpu/cpufreq/vdd_table/vdd_levels
 `
+	{ SPane:{
+                title:"IntelliPlug"
+        }},
+	{ SCheckBox:{
+		description:"IntelliPlug is a total replacement for Qualcomm's proprietary MPDecsion. It hotplugs/unplugs CPU cores based on load demand of the system. MPDecision is a closed source proprietary solution from Qualcomm and it is not very efficient at hotpluging/unpluging CPU cores leading to hotter cpu and poor battery. Faux's IntelliPlug is a complete Open Source solution to MPDecision and it is done in kernel instead of userspace (which it has to poll the kernel in order to make its decisions therefore inherently slower than in kernel solution like IntelliPlug).",
+                label:"Enable IntelliPlug",
+                default:`cat /sys/module/intelli_plug/parameters/intelli_plug_active`,
+                action:"generic /sys/module/intelli_plug/parameters/intelli_plug_active"
+        }},
+	{ SCheckBox:{
+                description:"Enable Eco Mode will automatically adjust the IntelliPlug parameters most optimal for dualcore operations on the fly.",
+                label:"Enable Eco Mode",
+                default:`cat /sys/module/intelli_plug/parameters/eco_mode_active`,
+                action:"generic /sys/module/intelli_plug/parameters/eco_mode_active"
+        }},
     ]
 }
 CTAG

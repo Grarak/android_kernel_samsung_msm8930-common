@@ -8,7 +8,8 @@ cat << CTAG
 		`. /res/synapse/config.json.generate.gpuscreen`,
 		`. /res/synapse/config.json.generate.audio`,
 		`. /res/synapse/config.json.generate.io`,
-		`. /res/synapse/config.json.generate.misc`
+		`. /res/synapse/config.json.generate.misc`,
+		`. /res/synapse/config.json.generate.zram`
     ]
 }
 CTAG
