@@ -1632,19 +1632,6 @@ static int should_io_be_busy(void)
 }
 
 #define	AID_SYSTEM	(1000)
-static void dbs_chown(void)
-{
-	int ret;
-
-	ret =
-	sys_chown("/sys/devices/system/cpu/cpufreq/intellidemand/sampling_rate",
-		low2highuid(AID_SYSTEM), low2highgid(0));
-	ret =
-	sys_chown("/sys/devices/system/cpu/cpufreq/intellidemand/boostpulse",
-		low2highuid(AID_SYSTEM), low2highgid(0));
-	if (ret)
-		pr_err("sys_chown: boostpulse error: %d", ret);
-}
 
 static void dbs_refresh_callback(struct work_struct *work)
 {
@@ -1807,8 +1794,6 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			return -EINVAL;
 
 		mutex_lock(&dbs_mutex);
-
-		dbs_chown();
 
 		dbs_enable++;
 		for_each_cpu(j, policy->cpus) {
