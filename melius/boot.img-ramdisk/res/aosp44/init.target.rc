@@ -88,9 +88,6 @@ on boot
     write /sys/devices/i2c-3/3-005b/update_fw 1
     start qcamerasvr
 
-    # enable pulsing led on boot
-    write /sys/class/sec/led/led_pattern 6
-
 on post-fs-data
     mkdir /data/tombstones 0771 system system
     mkdir /tombstones/modem 0771 system system
@@ -426,7 +423,7 @@ service thermald /system/bin/thermald
 service mpdecision /system/bin/mpdecision --no_sleep --avg_comp
     user root
     disabled
-
+    
 service qrngd /system/bin/qrngd -f
     class main
     user root
@@ -449,19 +446,9 @@ service geomagneticd /system/bin/geomagneticd
     user compass
     group system input
 
-service time_daemon /system/bin/time_daemon
-   class late_start
-   user root
-   group root
-
 on property:sys.boot_completed=1
     write /sys/class/input/input5/dynamic_matrix "10157 184 -98 184 9741 -556 -98 -556 10139"
     write /sys/class/input/input5/offsets "-1 9 1 493163 -131368 1406126 3"
-
-# boot completed
-on property:dev.bootcomplete=1
-    # disable pulsing led on boot complete
-    write /sys/class/sec/led/led_pattern 0
 
 # bugreport is triggered by holding down volume down, volume up and power
 service bugreport /system/bin/dumpstate -d -p -B \
