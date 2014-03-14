@@ -1,7 +1,7 @@
 /*
  * Author: Paul Reioux aka Faux123 <reioux@gmail.com>
  *
- * Copyright 2012 Paul Reioux
+ * Copyright 2012~2014 Paul Reioux
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -27,26 +27,30 @@
 #undef DEBUG_INTELLI_PLUG
 
 #define INTELLI_PLUG_MAJOR_VERSION	2
-#define INTELLI_PLUG_MINOR_VERSION	0
+#define INTELLI_PLUG_MINOR_VERSION	2
 
-#define DEF_SAMPLING_MS			(1000)
-#define BUSY_SAMPLING_MS		(500)
+#define DEF_SAMPLING_MS			(500)
+#define BUSY_SAMPLING_MS		(250)
 
-#define DUAL_CORE_PERSISTENCE		7
-#define TRI_CORE_PERSISTENCE		5
-#define QUAD_CORE_PERSISTENCE		3
+#define DUAL_CORE_PERSISTENCE		14
+#define TRI_CORE_PERSISTENCE		10
+#define QUAD_CORE_PERSISTENCE		6
 
-#define BUSY_PERSISTENCE		10
+#define BUSY_PERSISTENCE		20
 
 #define RUN_QUEUE_THRESHOLD		38
 
-#define CPU_DOWN_FACTOR			3
+#define CPU_DOWN_FACTOR			2
 
 static DEFINE_MUTEX(intelli_plug_mutex);
 
-struct delayed_work intelli_plug_work;
+static struct delayed_work intelli_plug_work;
+static struct delayed_work intelli_plug_boost;
 
-static unsigned int intelli_plug_active = 1;
+static struct workqueue_struct *intelliplug_wq;
+static struct workqueue_struct *intelliplug_boost_wq;
+
+static unsigned int intelli_plug_active = 0;
 module_param(intelli_plug_active, uint, 0644);
 
 static unsigned int eco_mode_active = 0;
@@ -107,7 +111,8 @@ static int mp_decision(void)
 
 	if (nr_cpu_online) {
 		index = (nr_cpu_online - 1) * 2;
-		if ((nr_cpu_online < 4) && (rq_depth >= NwNs_Threshold[index])) {
+		if ((nr_cpu_online < 4) &&
+			(rq_depth >= NwNs_Threshold[index])) {
 			if (total_time >= TwTs_Threshold[index]) {
 				new_state = 1;
 			}
@@ -167,6 +172,15 @@ static unsigned int calculate_thread_stats(void)
 	return nr_run;
 }
 
+static void __cpuinit intelli_plug_boost_fn(struct work_struct *work)
+{
+
+	int nr_cpus = num_online_cpus();
+
+	if (nr_cpus < 2)
+		cpu_up(1);
+}
+
 static void __cpuinit intelli_plug_work_fn(struct work_struct *work)
 {
 	unsigned int nr_run_stat;
@@ -198,7 +212,7 @@ static void __cpuinit intelli_plug_work_fn(struct work_struct *work)
 				case 1:
 					cpu_count = 2;
 #ifdef DEBUG_INTELLI_PLUG
-					pr_info("nr_run(2) => %u\n", nr_run_stat);
+					pr_info("nr_run(1) => %u\n", nr_run_stat);
 #endif
 					break;
 				}
@@ -236,10 +250,10 @@ static void __cpuinit intelli_plug_work_fn(struct work_struct *work)
 				if (!decision)
 					persist_count = DUAL_CORE_PERSISTENCE / CPU_DOWN_FACTOR;
 				if (nr_cpus < 1) {
-					for (i = 2; i < cpu_count; i++)
+					for (i = 1; i < cpu_count; i++)
 						cpu_up(i);
 				} else {
-					for (i = 2; i > 1; i--)
+					for (i = 2; i >  1; i--)
 						cpu_down(i);
 				}
 #ifdef DEBUG_INTELLI_PLUG
@@ -256,7 +270,7 @@ static void __cpuinit intelli_plug_work_fn(struct work_struct *work)
 			pr_info("intelli_plug is suspened!\n");
 #endif
 	}
-	schedule_delayed_work_on(0, &intelli_plug_work,
+	queue_delayed_work_on(0, intelliplug_wq, &intelli_plug_work,
 		msecs_to_jiffies(sampling_time));
 }
 
@@ -264,9 +278,9 @@ static void __cpuinit intelli_plug_work_fn(struct work_struct *work)
 static void intelli_plug_early_suspend(struct early_suspend *handler)
 {
 	int i;
-	int num_of_active_cores = 2;
-
-	cancel_delayed_work_sync(&intelli_plug_work);
+	int num_of_active_cores = num_possible_cpus();
+	
+	flush_workqueue(intelliplug_wq);
 
 	mutex_lock(&intelli_plug_mutex);
 	suspended = true;
@@ -285,7 +299,7 @@ static void __cpuinit intelli_plug_late_resume(struct early_suspend *handler)
 
 	mutex_lock(&intelli_plug_mutex);
 	/* keep cores awake long enough for faster wake up */
-	persist_count = DUAL_CORE_PERSISTENCE;
+	persist_count = BUSY_PERSISTENCE;
 	suspended = false;
 	mutex_unlock(&intelli_plug_mutex);
 
@@ -293,13 +307,13 @@ static void __cpuinit intelli_plug_late_resume(struct early_suspend *handler)
 	if (eco_mode_active)
 		num_of_active_cores = 1;
 	else
-		num_of_active_cores = 2;
+		num_of_active_cores = num_possible_cpus();
 
 	for (i = 1; i < num_of_active_cores; i++) {
 		cpu_up(i);
 	}
 
-	schedule_delayed_work_on(0, &intelli_plug_work,
+	queue_delayed_work_on(0, intelliplug_wq, &intelli_plug_work,
 		msecs_to_jiffies(10));
 }
 
@@ -317,13 +331,8 @@ static void intelli_plug_input_event(struct input_handle *handle,
 	pr_info("intelli_plug touched!\n");
 #endif
 
-	cancel_delayed_work(&intelli_plug_work);
-
-	sampling_time = BUSY_SAMPLING_MS;
-	busy_persist_count = BUSY_PERSISTENCE;
-
-	schedule_delayed_work_on(0, &intelli_plug_work,
-		msecs_to_jiffies(sampling_time));
+	queue_delayed_work_on(0, intelliplug_wq, &intelli_plug_boost,
+		msecs_to_jiffies(10));
 }
 
 static int input_dev_filter(const char *input_dev_name)
@@ -331,6 +340,7 @@ static int input_dev_filter(const char *input_dev_name)
 	if (strstr(input_dev_name, "touchscreen") ||
 		strstr(input_dev_name, "sec_touchscreen") ||
 		strstr(input_dev_name, "touch_dev") ||
+		strstr(input_dev_name, "Atmel maXTouch Touchscreen") ||
 		strstr(input_dev_name, "-keypad") ||
 		strstr(input_dev_name, "-nav") ||
 		strstr(input_dev_name, "-oj")) {
@@ -404,12 +414,16 @@ int __init intelli_plug_init(void)
 		 INTELLI_PLUG_MAJOR_VERSION,
 		 INTELLI_PLUG_MINOR_VERSION);
 
-	sampling_time = DEF_SAMPLING_MS;
-
 	rc = input_register_handler(&intelli_plug_input_handler);
+
+	intelliplug_wq = alloc_workqueue("intelliplug",
+				WQ_HIGHPRI | WQ_UNBOUND, 1);
+	intelliplug_boost_wq = alloc_workqueue("iplug_boost",
+				WQ_HIGHPRI | WQ_UNBOUND, 1);
 	INIT_DELAYED_WORK(&intelli_plug_work, intelli_plug_work_fn);
-	schedule_delayed_work_on(0, &intelli_plug_work,
-		msecs_to_jiffies(sampling_time));
+	INIT_DELAYED_WORK(&intelli_plug_boost, intelli_plug_boost_fn);
+	queue_delayed_work_on(0, intelliplug_wq, &intelli_plug_work,
+		msecs_to_jiffies(10));
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	register_early_suspend(&intelli_plug_early_suspend_struct_driver);
