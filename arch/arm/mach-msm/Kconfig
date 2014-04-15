@@ -1995,23 +1995,29 @@ config MSM_CPU_FREQ_MIN
 
 endif # CPU_FREQ_MSM
 
+config GPU_OVERCLOCK
+	bool "Enable GPU Overclocking option"
+	default n
+	help
+	  Krait 300 GPU overclocking 
+
 config CPU_OVERCLOCK
 	bool "Enable CPU Overclocking option"
 	default n
 	help
-	  Krait overclocking up to 2052 MHz
+	  Krait 300 CPU overclocking
 
 config CPU_UNDERCLOCK
         bool "Enable CPU Underclocking option"
         default n
         help
-          Krait underclocking down to 162 MHz
+          Krait 300 CPU underclocking
 
 config CPU_VOLTAGE_TABLE
 	bool "Enable CPU Voltage Table via sysfs for adjustements"
 	default n
 	help
-	  Krait User Votlage Control
+	  Krait 300 CPU Voltage Control
 
 config INTELLI_PLUG
 	bool "Enable intelli-plug cpu hotplug driver"
