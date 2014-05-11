@@ -52,22 +52,10 @@ fi
 
 ###########################################################################
 
-echo -e "${bldcya} Build kernel ${txtrst}"
-echo -e "> 1. Melius";
-echo -e "  2. Serrano";
-read variant
-
-if [ "$variant" != "2" ]; then
-	make melius_defconfig VARIANT_DEFCONFIG=msm8930_melius_eur_lte_defconfig SELINUX_DEFCONFIG=selinux_defconfig
-	echo -e "${bldcya}Build kernel ${txtrst}"
-	cp arch/arm/configs/gk_melius_defconfig .config
-	sed -i s/CONFIG_LOCALVERSION=\".*\"/CONFIG_LOCALVERSION=\"-GraKernel_${version}\"/ .config
-else
-	make serrano_defconfig VARIANT_DEFCONFIG=msm8930_serrano_eur_lte_defconfig SELINUX_DEFCONFIG=selinux_defconfig
-	echo -e "${bldcya}Build kernel ${txtrst}"
-	cp arch/arm/configs/gk_serrano_defconfig .config
-	sed -i s/CONFIG_LOCALVERSION=\".*\"/CONFIG_LOCALVERSION=\"-GraKernel_${version}\"/ .config
-fi
+make melius_defconfig VARIANT_DEFCONFIG=msm8930_melius_eur_lte_defconfig SELINUX_DEFCONFIG=selinux_defconfig
+echo -e "${bldcya}Build kernel ${txtrst}"
+cp arch/arm/configs/gk_melius_defconfig .config
+sed -i s/CONFIG_LOCALVERSION=\".*\"/CONFIG_LOCALVERSION=\"-GraKernel_${version}\"/ .config
 
 ###########################################################################
 
@@ -95,13 +83,7 @@ buildramdisk() {
 }
 
 if [ -e arch/arm/boot/zImage ]; then
-
-	if [ "$variant" != "2" ]; then
-		buildramdisk melius
-	else
-		buildramdisk serrano
-	fi
-
+	buildramdisk ramdisk
 else
 	echo "${bldred} KERNEL DID NOT BUILD! ${txtrst}"
 fi
