@@ -16,7 +16,6 @@ version=1.5
 DATE_START=$(date +"%s")
 
 ##########################################################################
-
 echo -e "${bldcya}Do you want to clean up? ${txtrst} [N/y]"
 read cleanup
 
@@ -34,22 +33,17 @@ if [ "$cleanup" == "y" ]; then
 	        make clean mrproper
         fi
 fi
-
 ###########################################################################
-
-[ -e .version ] && rm -f .version
-
 echo -e "${bldcya}Do you want to edit the kernel version? ${txtrst} [N/y]"
 read kernelversion
 
 if [ "$kernelversion" == "y" ]; then
-        echo -e "${bldcya} What version has your kernel? ${txtrst}"
-        echo "${bldred} NUMBERS ONLY! ${txtrst}"
+        echo -e "${bldcya}What version has your kernel? ${txtrst}"
+        echo "${bldred}NUMBERS ONLY! ${txtrst}"
         read number
  
-        echo $number >> .version
+        echo $number > .version
 fi
-
 ###########################################################################
 
 make melius_defconfig VARIANT_DEFCONFIG=msm8930_melius_eur_lte_defconfig SELINUX_DEFCONFIG=selinux_defconfig
@@ -58,36 +52,39 @@ cp arch/arm/configs/gk_melius_defconfig .config
 sed -i s/CONFIG_LOCALVERSION=\".*\"/CONFIG_LOCALVERSION=\"-GraKernel_${version}\"/ .config
 
 ###########################################################################
-
 echo -e "${bldcya}This could take a while .... ${txtrst}"
 
 nice -n 10 make modules -j4 ARCH=arm
 nice -n 10 make -j4 ARCH=arm
 
 ###########################################################################
-
-buildramdisk() {
-	cp -vf arch/arm/boot/zImage $1/
-	rm -f $1/boot.img-ramdisk/lib/modules/*.ko
-	find -name "*.ko" -exec cp -f {} $1/boot.img-ramdisk/lib/modules \;
-
-	cd $1
-
-	./build.sh
-
-	echo -e "${bldcya}Finished!! ${txtrst}"
-	DATE_END=$(date +"%s")
-	DIFF=$(($DATE_END - $DATE_START))
-	echo "Build completed in $(($DIFF / 60)) minute(s) and $(($DIFF % 60)) seconds."
-	date '+%a, %d %b %Y %H:%M:%S'
-}
-
 if [ -e arch/arm/boot/zImage ]; then
-	buildramdisk ramdisk
+
+	if [ -d romswitcher ]; then
+		cd romswitcher
+		git pull
+		cd ..
+	else
+		git clone git@github.com:Grarak/RomSwitcher-melius.git -b master romswitcher
+	fi
+
+	find -name "zImage" -exec cp -vf {} romswitcher/ \;
+	find -name "*.ko" -exec cp -vf {} romswitcher/boot.img-ramdisk/lib/modules/ \;
+
+	cd romswitcher
+
+	echo $version > boot.img-ramdisk/sbin/version
+	./build.sh
+   
+        echo -e "${bldcya} Finished!! ${txtrst}"
+        DATE_END=$(date +"%s")
+        DIFF=$(($DATE_END - $DATE_START))
+        echo "Build completed in $(($DIFF / 60)) minute(s) and $(($DIFF % 60)) seconds."
+        date '+%a, %d %b %Y %H:%M:%S'
+
 else
 	echo "${bldred} KERNEL DID NOT BUILD! ${txtrst}"
 fi
 
 exit 0
-
 ############################################################################
