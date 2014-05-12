@@ -4,10 +4,12 @@ cat << CTAG
 {
     name:I/O,
     elements:[
-        { SPane:{
-		title:"I/O schedulers",
-		description:"Set the active I/O elevator algorithm. The scheduler decides how to handle I/O requests and how to handle them."
+        { STitleBar:{
+		title:"I/O schedulers"
         }},
+	{ SDescription:{
+		description:"Set the active I/O elevator algorithm. The scheduler decides how to handle I/O requests and how to handle them."
+	}},
 	{ SOptionList:{
 		title:"Internal storage scheduler",
 		default:`echo $(/res/synapse/actions/bracket-option /sys/block/mmcblk0/queue/scheduler)`,

@@ -2,12 +2,12 @@
 
 cat << CTAG
 {
-    name:Miscellaneous,
+    name:Misc,
     elements:[
 	{ STitleBar:{
 		title:"Battery"
 	}},
-	{ SDescription:{ 
+	{ SDescription:{
 		description:"Device charging currents are composed of input current coming into the device (Nominal 5V) and charge current fed to the battery (Battery Charge Voltage). Charger detection divides charging cable types into several categories as described below. If charging current exceeds input load, then charging current is dynamically adjusted. For avoiding battery deterioration, charging currents of less than 0.7 Coloumb are advised; ex. 2600mAh (Capacity) * 0.7C = ~1820mA."
 	}},
 	{ SLiveLabel:{
@@ -23,6 +23,12 @@ cat << CTAG
 	{ SDescription:{ 
 		description:"Input is the live current limit coming through the USB port into the device at 5V. Charge is the desired target current to charge the battery. Now is the actual current limit applied to the battery."
 	}},
+	{ SCheckBox:{
+		description:"Enable this will increase the charing speed with USB, but disable usb mass storage.",
+                label:"Force Fast Charge",
+                default:`cat /sys/kernel/fast_charge/force_fast_charge`,
+                action:"generic /sys/kernel/fast_charge/force_fast_charge"
+        }},
 	{ STitleBar:{
 		title:"Other Settings"
 	}},
