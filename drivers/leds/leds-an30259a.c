@@ -793,7 +793,6 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 
 void an30259a_led_blink(int rgb, int on, int off)
 {
-	int retval;
 	unsigned int led_brightness = rgb;
 	unsigned int delay_on_time = on;
 	unsigned int delay_off_time = off;
