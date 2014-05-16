@@ -4076,11 +4076,6 @@ static struct msm_thermal_data msm_thermal_pdata = {
 	.core_control_mask = 0xe,
 #else
 	.poll_ms = 1000,
-#ifdef CONFIG_CPU_OVERCLOCK
-	.limit_temp = 70,
-#else
-	.limit_temp = 60,
-#endif
 	.temp_hysteresis_degC = 10,
         .freq_step = 2,
 #endif
