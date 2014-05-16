@@ -328,20 +328,14 @@ int msm_cpufreq_set_freq_limits(uint32_t cpu, uint32_t min, uint32_t max)
 }
 EXPORT_SYMBOL(msm_cpufreq_set_freq_limits);
 
-#ifdef CONFIG_CPU_UNDERCLOCK
-#define UC_FREQ_MIN 162000
-#endif
-
-#ifdef CONFIG_CPU_OVERCLOCK
-#define OC_FREQ_MAX 2052000
-#endif
-
 static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 {
 	int cur_freq;
 	int index;
 	struct cpufreq_frequency_table *table;
 	struct cpufreq_work_struct *cpu_work = NULL;
+	int maxfreq;
+	int minfreq;
 
 	table = cpufreq_frequency_get_table(policy->cpu);
 	if (table == NULL)
@@ -354,15 +348,18 @@ static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 	if (cpu_is_msm8625())
 		cpumask_setall(policy->cpus);
 
+	maxfreq = table[index].frequency;
+	minfreq = table[0].frequency; 
+
 	if (cpufreq_frequency_table_cpuinfo(policy, table)) {
 #ifdef CONFIG_MSM_CPU_FREQ_SET_MIN_MAX
 #ifdef CONFIG_CPU_UNDERCLOCK
-		policy->cpuinfo.min_freq = UC_FREQ_MIN;
+		policy->cpuinfo.min_freq = minfreq;
 #else
 		policy->cpuinfo.min_freq = CONFIG_MSM_CPU_FREQ_MIN;
 #endif
 #ifdef CONFIG_CPU_OVERCLOCK
-		policy->cpuinfo.max_freq = OC_FREQ_MAX;
+		policy->cpuinfo.max_freq = maxfreq;
 #else
 		policy->cpuinfo.max_freq = CONFIG_MSM_CPU_FREQ_MAX;
 #endif
@@ -370,12 +367,12 @@ static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 	}
 #ifdef CONFIG_MSM_CPU_FREQ_SET_MIN_MAX
 #ifdef CONFIG_CPU_UNDERCLOCK
-	policy->min = UC_FREQ_MIN;
+	policy->min = minfreq;
 #else
 	policy->min = CONFIG_MSM_CPU_FREQ_MIN;
 #endif
 #ifdef CONFIG_CPU_OVERCLOCK
-	policy->max = OC_FREQ_MAX;
+	policy->max = maxfreq;
 #else
 	policy->max = CONFIG_MSM_CPU_FREQ_MAX;
 #endif
