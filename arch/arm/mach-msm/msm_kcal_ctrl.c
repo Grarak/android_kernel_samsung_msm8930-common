@@ -396,20 +396,6 @@ static int kcal_refresh_values(void)
         return update_lcdc_lut();
 }
 
-static bool calc_checksum(unsigned int a, unsigned int b,
-			unsigned int c, unsigned int d)
-{
-	unsigned char chksum = 0;
-
-	chksum = ~((a & 0xff) + (b & 0xff) + (c & 0xff));
-
-	if (chksum == (d & 0xff)) {
-		return true;
-	} else {
-		return false;
-	}
-}
-
 static ssize_t kcal_store(struct device *dev, struct device_attribute *attr,
 						const char *buf, size_t count)
 {
@@ -423,6 +409,7 @@ static ssize_t kcal_store(struct device *dev, struct device_attribute *attr,
 	sscanf(buf, "%d %d %d", &kcal_r, &kcal_g, &kcal_b);
 
 	kcal_ctrl_pdata->set_values(kcal_r, kcal_g, kcal_b);
+	last_status_kcal_ctrl = kcal_ctrl_pdata->refresh_display();
 	return count;
 }
 
@@ -438,35 +425,6 @@ static ssize_t kcal_show(struct device *dev, struct device_attribute *attr,
 	return sprintf(buf, "%d %d %d\n", kcal_r, kcal_g, kcal_b);
 }
 
-static ssize_t kcal_ctrl_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	int cmd = 0;
-	if (!count)
-		return last_status_kcal_ctrl = -EINVAL;
-
-	sscanf(buf, "%d", &cmd);
-
-	if(cmd != 1)
-		return last_status_kcal_ctrl = -EINVAL;
-
-	last_status_kcal_ctrl = kcal_ctrl_pdata->refresh_display();
-
-	if(last_status_kcal_ctrl)
-		return -EINVAL;
-	else
-		return count;
-}
-
-static ssize_t kcal_ctrl_show(struct device *dev,
-				struct device_attribute *attr, char *buf)
-{
-	if(last_status_kcal_ctrl)
-		return sprintf(buf, "NG\n");
-	else
-		return sprintf(buf, "OK\n");
-}
-
 static ssize_t kcal_version_show(struct device *dev,
                                 struct device_attribute *attr, char *buf)
 {
@@ -478,7 +436,6 @@ static ssize_t kcal_version_show(struct device *dev,
 static DEVICE_ATTR(power_reset, 0644, kgamma_reset_show, kgamma_reset_store); 
 static DEVICE_ATTR(power_line, 0644, kgamma_show, kgamma_store); 
 static DEVICE_ATTR(power_rail, 0644, kcal_show, kcal_store);
-static DEVICE_ATTR(power_rail_ctrl, 0644, kcal_ctrl_show, kcal_ctrl_store);
 static DEVICE_ATTR(power_rail_version, 0444, kcal_version_show, NULL);
 
 static int kcal_ctrl_probe(struct platform_device *pdev)
@@ -499,9 +456,6 @@ static int kcal_ctrl_probe(struct platform_device *pdev)
 	if(rc !=0)
 		return -1;
 	rc = device_create_file(&pdev->dev, &dev_attr_power_rail);
-	if(rc !=0)
-		return -1;
-	rc = device_create_file(&pdev->dev, &dev_attr_power_rail_ctrl);
 	if(rc !=0)
 		return -1;
 	rc = device_create_file(&pdev->dev, &dev_attr_power_rail_version);
