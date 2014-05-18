@@ -3204,13 +3204,6 @@ config PCM_ROUTE_VOICE_STUB
 	 To compile this option, choose M here:
 	 If unsure, say N here.
 
-config FORCE_FAST_CHARGE
-	bool "Force AC charge mode at will"
-	default n
-	help
-	  A simple sysfs interface to force adapters that
-	  are detected as USB to charge as AC.
-
 config UPDATE_LCDC_LUT
 	bool "Set initial Qualcomm LCDC lut"
 	default n
