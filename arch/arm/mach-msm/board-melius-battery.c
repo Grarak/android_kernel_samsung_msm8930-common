@@ -206,6 +206,7 @@ static int sec_bat_get_cable_from_extended_cable_type(
 	int cable_type = POWER_SUPPLY_TYPE_UNKNOWN;
 	union power_supply_propval value;
 	int charge_current_max = 0, charge_current = 0;
+	int real_cable_type = cable_type;
 
 	cable_main = GET_MAIN_CABLE_TYPE(input_extended_cable_type);
 	if (cable_main != POWER_SUPPLY_TYPE_UNKNOWN)
@@ -294,6 +295,8 @@ static int sec_bat_get_cable_from_extended_cable_type(
 		break;
 	}
 
+	real_cable_type = cable_type;
+
 	if (charge_current_max == 0) {
 #ifdef CONFIG_FORCE_FAST_CHARGE
 		if (cable_type == POWER_SUPPLY_TYPE_USB && force_fast_charge)
@@ -311,7 +314,7 @@ static int sec_bat_get_cable_from_extended_cable_type(
 	value.intval = charge_current;
 	psy_do_property(sec_battery_pdata.charger_name, set,
 			POWER_SUPPLY_PROP_CURRENT_AVG, value);
-	return cable_type;
+	return real_cable_type;
 }
 
 #if defined(CONFIG_MACH_MELIUS_CHN_CMCC) || defined(CONFIG_MACH_MELIUS_CHN_CTC) ||  defined(CONFIG_MACH_MELIUS_CHN_OPEN) ||  defined(CONFIG_MACH_MELIUS_ZH_LTE)
