@@ -33,10 +33,6 @@
 #include <linux/battery/sec_fuelgauge.h>
 #include <linux/battery/sec_charger.h>
 
-#ifdef CONFIG_FORCE_FAST_CHARGE
-#include <linux/fastchg.h>
-#endif
-
 #define SEC_BATTERY_PMIC_NAME ""
 
 sec_battery_platform_data_t sec_battery_pdata;
@@ -295,10 +291,6 @@ static int sec_bat_get_cable_from_extended_cable_type(
 	}
 
 	if (charge_current_max == 0) {
-#ifdef CONFIG_FORCE_FAST_CHARGE
-		if (cable_type == POWER_SUPPLY_TYPE_USB && force_fast_charge)
-			cable_type = POWER_SUPPLY_TYPE_MAINS;
-#endif
 		charge_current_max =
 			charging_current_table[cable_type].input_current_limit;
 		charge_current =
