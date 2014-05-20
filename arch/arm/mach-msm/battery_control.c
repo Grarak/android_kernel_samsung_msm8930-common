@@ -30,7 +30,7 @@ char *battery_cables[] = {
 	"OTG", "BMS", NULL
 };
 
-static ssize_t voltages_show(struct kobject *kobj, struct kobj_attribute *attr,
+static ssize_t input_limit_show(struct kobject *kobj, struct kobj_attribute *attr,
 				char *buf) {
 
 	int i;
@@ -44,7 +44,7 @@ static ssize_t voltages_show(struct kobject *kobj, struct kobj_attribute *attr,
 	return value;
 }
 
-static ssize_t voltages_store(struct kobject *kobj, struct kobj_attribute *attr,
+static ssize_t input_limit_store(struct kobject *kobj, struct kobj_attribute *attr,
 				const char *buf, size_t count) {
 
 	int i;
@@ -56,21 +56,62 @@ static ssize_t voltages_store(struct kobject *kobj, struct kobj_attribute *attr,
 
 	sscanf(buf, "%s %d", &cable[0], &voltage);
 
-	for (i = 0; battery_cables[i] != NULL; i++)
-		if (!strcmp(battery_cables[i], cable) && charging_current_table[i].input_current_limit != 0) {
-			pr_debug("set voltage of %s to %d\n", cable, voltage);
-			charging_current_table[i].input_current_limit = voltage;
-			break;
-		}
+	if (voltage >= 460 && voltage <= 1900)
+		for (i = 0; battery_cables[i] != NULL; i++)
+			if (!strcmp(battery_cables[i], cable) && charging_current_table[i].input_current_limit != 0) {
+				pr_debug("set voltage of %s to %d\n", cable, voltage);
+				charging_current_table[i].input_current_limit = voltage;
+				break;
+			}
 
 	return count;
 }
 
-static struct kobj_attribute voltages_attribute =
-	__ATTR(voltages, 0666, voltages_show, voltages_store);
+static ssize_t fastcharging_current_show(struct kobject *kobj, struct kobj_attribute *attr,
+				char *buf) {
+
+	int i;
+	int value = 0;
+
+	for (i = 0; battery_cables[i] != NULL; i++)
+		if (charging_current_table[i].fast_charging_current != 0)
+			value += sprintf(buf + value, "%s: %d\n", battery_cables[i],
+							charging_current_table[i].fast_charging_current);
+
+	return value;
+}
+
+static ssize_t fastcharging_current_store(struct kobject *kobj, struct kobj_attribute *attr,
+				const char *buf, size_t count) {
+
+	int i;
+	char cable[16];
+	int voltage;
+
+	if (!count)
+		return -EINVAL;
+
+	sscanf(buf, "%s %d", &cable[0], &voltage);
+
+	if (voltage >= 460 && voltage <= 2100)
+		for (i = 0; battery_cables[i] != NULL; i++)
+			if (!strcmp(battery_cables[i], cable) && charging_current_table[i].fast_charging_current != 0) {
+				pr_debug("set voltage of %s to %d\n", cable, voltage);
+				charging_current_table[i].fast_charging_current = voltage;
+				break;
+			}
+
+	return count;
+}
+
+static struct kobj_attribute input_limit_attribute =
+	__ATTR(input_limit, 0666, input_limit_show, input_limit_store);
+static struct kobj_attribute fastcharging_current_attribute =
+	__ATTR(fastcharging_current, 0666, fastcharging_current_show, fastcharging_current_store);
 
 static struct attribute *battery_control_attrs[] = {
-	&voltages_attribute.attr,
+	&input_limit_attribute.attr,
+	&fastcharging_current_attribute.attr,
 	NULL,
 };
 
