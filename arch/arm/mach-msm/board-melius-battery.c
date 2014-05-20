@@ -292,6 +292,17 @@ static int sec_bat_get_cable_from_extended_cable_type(
 			charging_current_table[cable_type].
 			fast_charging_current;
 	}
+
+#ifdef CONFIG_BATTERY_CONTROL
+	if (cable_type == POWER_SUPPLY_TYPE_BATTERY) {
+		charge_current_max =
+			charging_current_table[cable_type].input_current_limit = 0;
+		charge_current =
+			charging_current_table[cable_type].
+			fast_charging_current = 0;
+	}
+#endif
+
 	value.intval = charge_current_max;
 	psy_do_property(sec_battery_pdata.charger_name, set,
 			POWER_SUPPLY_PROP_CURRENT_MAX, value);
