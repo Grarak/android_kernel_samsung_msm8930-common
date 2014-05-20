@@ -28,6 +28,10 @@
 #include "devices-msm8x60.h"
 #include "board-8930.h"
 
+#ifdef CONFIG_BATTERY_CONTROL
+#include "battery_control.h"
+#endif
+
 #if defined(CONFIG_BATTERY_SAMSUNG)
 #include <linux/battery/sec_battery.h>
 #include <linux/battery/sec_fuelgauge.h>
@@ -39,7 +43,7 @@ sec_battery_platform_data_t sec_battery_pdata;
 static unsigned int sec_bat_recovery_mode;
 
 #if defined(CONFIG_MACH_MELIUS)
-static sec_charging_current_t charging_current_table[] = {
+sec_charging_current_t charging_current_table[] = {
 	{1900,	2100,	200,	40*60},	/* Unknown */
 	{0,	0,	0,	0},					/* Battery */
 	{0,	0,	0,	0},					/* UPS */
@@ -56,7 +60,7 @@ static sec_charging_current_t charging_current_table[] = {
 	{0,	0,	0,	0},					/* BMS */
 };
 #else
-static sec_charging_current_t charging_current_table[] = {
+sec_charging_current_t charging_current_table[] = {
 	{1800,	2100,	200,	40*60},	/* Unknown */
 	{0,	0,	0,	0},					/* Battery */
 	{0,	0,	0,	0},					/* UPS */
