@@ -11,7 +11,7 @@ bldcya=${txtbld}$(tput setaf 6) # cyan
 
 txtrst=$(tput sgr0) # Reset
 
-version=1.9
+version=2.0
 
 DATE_START=$(date +"%s")
 
