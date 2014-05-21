@@ -24,9 +24,10 @@
 #include "battery_control.h"
 
 char *battery_cables[] = {
-	"Unknown", "Battery", "UPS", "MAINS",
-	"USB", "USB_DCP", "USB_CDP", "USB_ACA",
-	"MISC", "Cardock", "Wireless", "UartOff",
+	"Unknown", "Battery", "UPS",
+	"MAINS", "USB", "USB_DCP",
+	"USB_CDP", "USB_ACA", "MISC",
+	"Cardock", "Wireless", "UartOff",
 	"OTG", "BMS", NULL
 };
 
