@@ -15,6 +15,7 @@ mount -t sysfs sysfs /sys
 mkdir -p /dev/block
 
 mknod /dev/block/mmcblk0p20 b 179 20
+mknod /dev/block/loop0 b 7 0
 
 mount -t ext4 /dev/block/mmcblk0p20 /system
 
@@ -32,6 +33,10 @@ out() {
 
 mv -f /res/sec422/* /
 
-[ -d /system/app/Synapse.apk ] || mv -f /res/synapse/Synapse.apk /system/app/ && chmod 644 /system/app/Synapse.apk
+mv -f /res/prima /lib/modules
+ln -s /lib/modules/prima/prima_wlan.ko /lib/modules/wlan.ko
+ln -s /lib/modules/* /system/lib/modules/
+
+[ -d /system/app/Synapse.apk ] || mv -f /res/synapse/Synapse.apk /system/app && chmod 644 /system/app/Synapse.apk
 
 out
