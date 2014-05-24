@@ -1,0 +1,12 @@
+if [ -f $1 ];then
+	if [[ ! -z $2 ]]; then
+		echo $2 > $1
+	fi
+
+	VALUE=`cat $1`
+	if [ "$1" == /sys/module/msm_thermal/parameters/enabled ]; then
+		[ "$VALUE" == "N" ] && VALUE=0
+		[ "$VALUE" == "Y" ] && VALUE=1
+	fi
+	echo $VALUE
+fi

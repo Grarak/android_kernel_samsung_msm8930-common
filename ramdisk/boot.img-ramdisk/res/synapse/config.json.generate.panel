@@ -1,0 +1,75 @@
+#!/sbin/busybox sh
+
+VALUE=0
+
+cat << CTAG
+{
+    name:Panel,
+    elements:[
+	{ STitleBar:{
+                title:"mDNIe global controls"
+        }},
+	{ SDescription:{
+		description:"mobile Digital Natural Image engine control. Samsungs hardware image post-processor controls virtually any image manipulation."
+	}},
+	{ SCheckBox:{
+		description:"Disable this to make white brighter at low brightness (this has impact of battery life).",
+                label:"Content Adaptive Brightness",
+                action:"mdnie cabc"
+        }},
+	{ SCheckBox:{
+                label:"Negative Mode",
+		default:`cat /sys/class/mdnie/mdnie/negative`,
+                action:"generic /sys/class/mdnie/mdnie/negative"
+        }},
+	{ SOptionList:{
+		title:"Scenario",
+                action:"mdnie scenario",
+                values:[
+			UI,
+			Video,
+			Video-Warm,
+			Video-Cold,
+			Camera,
+			Navigation,
+			Gallery,
+			VT,
+			Browser,
+			eBook,
+                ]
+        }},
+	{ SOptionList:{
+		title:"Mode",
+                action:"mdnie mode",
+                values:[
+			Standard,
+			Dynamic,
+			Movie,
+			Natural,
+                ]
+        }},
+	{ STitleBar:{
+		title:"MSM Kcal"
+	}},
+	{ SDescription:{
+		description:"Set multiplier of a specific color."
+	}},
+`
+	for COLOR in \`cat /sys/devices/platform/DIAG0.0/power_rail\` ; do
+		VALUE=$(($VALUE+1))
+		echo '{ SSeekBar:{ '
+			case $VALUE in
+			1)
+				echo 'title:"Red"' ;;
+			2)
+				echo 'title:"Green"' ;;
+			3)
+				echo 'title:"Blue"' ;;
+			esac
+			echo ', action:"kcal '${VALUE}'",
+			max:255, min:60 }},'
+	done
+`
+    ]
+}
+CTAG
