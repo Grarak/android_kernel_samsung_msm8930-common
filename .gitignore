@@ -32,6 +32,7 @@ modules.builtin
 *.lzo
 *.patch
 *.gcno
+!WCNSS_qcom_wlan_nv.bin
 
 #
 # Top-level generic files

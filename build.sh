@@ -63,7 +63,6 @@ if [ -e arch/arm/boot/zImage ]; then
 	find -name "zImage" -exec cp -vf {} ramdisk/ \;
 	ramdisk/boot.img-ramdisk/lib/modules/*.ko
 	find -name "*.ko" -exec cp -vf {} ramdisk/boot.img-ramdisk/lib/modules/ \;
-	cp -f drivers/staging/prima/firmware_bin/* ramdisk/boot.img-ramdisk/res/prima
 
 	cd ramdisk
 	./build.sh
