@@ -36,7 +36,7 @@ mv -f /res/sec422/* /
 rm -rf /system/lib/modules/*
 ln -s /lib/modules/* /system/lib/modules/
 
-mv -f /res/prima/* /system/etc/firmeware/wlan/prima
+mv -f /res/prima/* /system/etc/firmware/wlan/prima
 
 [ -d /system/app/Synapse.apk ] || mv -f /res/synapse/Synapse.apk /system/app && chmod 644 /system/app/Synapse.apk
 
