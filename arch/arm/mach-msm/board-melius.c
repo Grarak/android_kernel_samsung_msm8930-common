@@ -164,11 +164,6 @@
 
 #include <linux/power_supply.h>
 #include <linux/battery/sec_charger.h>
-
-#ifdef CONFIG_CPU_FREQ_GOV_INTELLIDEMAND
-int id_set_two_phase_freq(int cpufreq);
-#endif
-
 /*
 #define SEC_CHARGER_I2C_SLAVEADDR	0x6B
 */
@@ -5392,9 +5387,6 @@ void __init msm8930_melius_init(void)
 	platform_add_devices(express2_devices, ARRAY_SIZE(express2_devices));
 #ifdef CONFIG_MSM_CAMERA
 	msm8930_init_cam();
-#endif
-#ifdef CONFIG_CPU_FREQ_GOV_INTELLIDEMAND
-    id_set_two_phase_freq(1566000);
 #endif
 #ifdef CONFIG_SAMSUNG_CMC624
 	platform_device_register(&cmc624_i2c_gpio_device);
