@@ -33,23 +33,9 @@
 #ifndef _CYTTSP4_REGS_H
 #define _CYTTSP4_REGS_H
 
-
-/*
-  KEVI added + : 001-86666
-  There are four buttons physically. One logical button consists of two physical button.
-  One logical button has dummy button and real button. When dummy button was detected,
-  this event will be ignored by driver.
-*/
-//#define LT02		// 7inch Large touchscreen phone
-
-#ifdef LT02
-#define BUTTON_PALM_REJECTION
-#endif
 /* Used to obtain Samsung related FW/HW/Configuration data */
 #define SAMSUNG_SYSINFO_DATA
 
-/* Used for FW upgrade according to the panel type */
-#define FW_UPGRADE_BY_PANEL_TYPE
 #define CY_FW_FILE_NAME "cyttsp4_fw.bin"
 
 #define CY_MAX_PRBUF_SIZE           PIPE_BUF
@@ -98,7 +84,7 @@
 #define IS_LARGE_AREA(x)            ((x) & 0x20)
 #define IS_BAD_PKT(x)               ((x) & 0x20)
 
-#define CY_WATCHDOG_TIMEOUT msecs_to_jiffies(2000)
+#define CY_WATCHDOG_TIMEOUT msecs_to_jiffies(1000)
 
 /* drv_debug commands */
 #define CY_DBG_SUSPEND                  4
@@ -108,11 +94,6 @@
 
 #ifdef SAMSUNG_SYSINFO_DATA
 #define SAMSUNG_DATA_OFFSET     0x70
-#endif
-
-#ifdef FW_UPGRADE_BY_PANEL_TYPE
-#define PANEL_TYPE_LOCATION     20      // address of mfg
-#define GET_PANEL_TYPE(si) ((si)->si_ptrs.mdata->mdata[PANEL_TYPE_LOCATION])
 #endif
 
 enum cyttsp4_hst_mode_bits {
@@ -416,11 +397,6 @@ struct cyttsp4_samsung_data {
 } __packed;
 #endif
 
-// KEVI added + 2013.05.08 : Samsung will check panel infomation from mdata[0] which shows GFF=0, GFD=1.
-#define MDATA_SIZE      64
-struct cyttsp4_mdata {
-        u8 mdata[MDATA_SIZE];
-} __packed;
 struct cyttsp4_sysinfo_ptr {
 	struct cyttsp4_cydata *cydata;
 	struct cyttsp4_test *test;

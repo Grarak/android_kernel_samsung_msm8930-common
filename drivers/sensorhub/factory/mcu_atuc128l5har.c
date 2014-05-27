@@ -259,12 +259,8 @@ exit:
 		fsb[GEOMAGNETIC_SENSOR].z, fsb[PRESSURE_SENSOR].pressure[0],
 		fsb[PRESSURE_SENSOR].pressure[1],
 		fsb[PROXIMITY_SENSOR].prox[0], fsb[PROXIMITY_SENSOR].prox[1],
-#if defined(CONFIG_SENSORS_SSP_GP2AP030A00F)
-		fsb[LIGHT_SENSOR].data_als0, fsb[LIGHT_SENSOR].data_als1, fsb[LIGHT_SENSOR].lux_mode,0);
-#else
 		fsb[LIGHT_SENSOR].r, fsb[LIGHT_SENSOR].g, fsb[LIGHT_SENSOR].b,
 		fsb[LIGHT_SENSOR].w);
-#endif
 
 	return sprintf(buf, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%u,"
 		"%u,%u,%u,%u\n",
@@ -274,10 +270,6 @@ exit:
 		fsb[GEOMAGNETIC_SENSOR].x, fsb[GEOMAGNETIC_SENSOR].y,
 		fsb[GEOMAGNETIC_SENSOR].z, fsb[PRESSURE_SENSOR].pressure[0],
 		fsb[PRESSURE_SENSOR].pressure[1], fsb[PROXIMITY_SENSOR].prox[1],
-#if defined(CONFIG_SENSORS_SSP_GP2AP030A00F)
-		fsb[LIGHT_SENSOR].data_als0, fsb[LIGHT_SENSOR].data_als1, fsb[LIGHT_SENSOR].lux_mode,0);
-#else
 		fsb[LIGHT_SENSOR].r, fsb[LIGHT_SENSOR].g, fsb[LIGHT_SENSOR].b,
 		fsb[LIGHT_SENSOR].w);
-#endif
 }

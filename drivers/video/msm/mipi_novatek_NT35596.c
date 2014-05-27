@@ -471,11 +471,13 @@ static ssize_t siop_enable_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 /* Disable siop for eur model */
-#if 1/*common for melius*/
+#if defined(CONFIG_MACH_MELIUS_EUR_OPEN) || defined(CONFIG_MACH_MELIUS_EUR_LTE)
 	return size;
 #else
 	int value;
+
 	sscanf(buf, "%2d", &value);
+	pr_debug("[CMC624:INFO] set cabc : %d\n", value);
 
 	if (value < CABC_OFF_MODE || value >= MAX_CABC_MODE) {
 		pr_debug("[CMC624:ERROR] : wrong cabc mode value : %d\n",
@@ -488,12 +490,7 @@ static ssize_t siop_enable_store(struct device *dev,
 		return size;
 	}
 
-	if (msd.dstat.auto_brightness == 0) {
-		cabc_onoff_ctrl(value);
-		pr_debug("[CMC624:INFO] set cabc by siop : %d\n", value);
-	} else {
-		pr_debug("[CMC624:INFO] cabc already set by settings : %d\n", msd.dstat.auto_brightness);
-	}
+	cabc_onoff_ctrl(value);
 
 	return size;
 #endif

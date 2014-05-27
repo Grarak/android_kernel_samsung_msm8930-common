@@ -51,11 +51,11 @@ static ssize_t power_supply_show_property(struct device *dev,
 		"Unknown", "Charging", "Discharging", "Not charging", "Full"
 	};
 	static char *charge_type[] = {
-		"Unknown", "N/A", "Trickle", "Fast", "Slow"
+		"Unknown", "N/A", "Trickle", "Fast"
 	};
 	static char *health_text[] = {
 		"Unknown", "Good", "Overheat", "Dead", "Over voltage",
-		"Unspecified failure", "Cold", "Under voltage",
+		"Unspecified failure", "Cold",
 	};
 	static char *technology_text[] = {
 		"Unknown", "NiMH", "Li-ion", "Li-poly", "LiFe", "NiCd",

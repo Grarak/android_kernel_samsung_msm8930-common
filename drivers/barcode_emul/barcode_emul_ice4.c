@@ -684,7 +684,6 @@ static void ir_remocon_work(struct barcode_emul_data *ir_data, int count)
 	if (gpio_get_value(g_pdata->irda_irq)) {
 		pr_barcode("%s : %d Checksum NG!\n",
 			__func__, count_number);
-		pr_barcode("fw_status=%d\n",g_pdata->fw_status);
 		ack_pin_onoff = 1;
 	} else {
 		pr_barcode("%s : %d Checksum OK!\n",
@@ -728,7 +727,6 @@ static void ir_remocon_work(struct barcode_emul_data *ir_data, int count)
 	} else {
 		pr_barcode("%s : %d Sending IR NG!\n",
 				__func__, count_number);
-		pr_barcode("fw_status=%d\n",g_pdata->fw_status);
 		ack_pin_onoff = 2;
 	}
 
@@ -1044,16 +1042,10 @@ EXPORT_SYMBOL(ice_gpiox_set);
 #endif
 static void fw_work(struct work_struct *work)
 {
-	for (g_pdata->fw_status=1;g_pdata->fw_status < 4;g_pdata->fw_status++) {
-		pr_barcode("%s, fw_status=%d\n", __func__, g_pdata->fw_status);
-		ice4_fpga_firmware_update();
-
-		if (check_fpga_cdone()) {
-			pr_err("%s: cdone fail !!\n", __func__);
-		} else {
-			g_pdata->fw_status=0;
-			break;
-		}
+	ice4_fpga_firmware_update();
+	if (check_fpga_cdone()) {
+		pr_err("%s: cdone fail !!\n", __func__);
+		return;
 	}
 
 	/* set clock */

@@ -22,8 +22,9 @@ static struct mipi_panel_data mipi_pd;
 #if 0
 #define MIPI_CLK (450000000)
 #endif
-#define MIPI_CLK (395000000) /* 130625 HW request */
+#define MIPI_CLK (365000000) /* 130412 HW request */
 #define USE_AOR (1)
+#define HBM_OVERWRITING	(1)
 
 static int lux_tbl[] = {
 	10, 11, 12, 13, 14,
@@ -47,11 +48,11 @@ static char samsung_test_key_on1[] = {
 	0xF0,
 	0x5A, 0x5A,
 };
-/*
+
 static char samsung_test_key_on2[] = {
 	0xF1,
 	0x5A, 0x5A,
-};*/
+};
 
 static char samsung_test_key_on3[] = {
 	0xFC,
@@ -88,8 +89,8 @@ static char samsung_brightness_gamma[] = {
 	0x80, 0x80, 0x80, 0x80,
 	0x80, 0x80, 0x80, 0x80,
 	0x80, 0x80, 0x80, 0x80,
-	0x80, 0x80, 0x00, 0x00,
-	0x00,
+	0x80, 0x80, 0x02, 0x03,
+	0x02,
 };
 
 static char samsung_gamma_update[] = {
@@ -105,9 +106,19 @@ static char samsung_brightness_aor_condition[] = {
 };
 #endif /* USE_AOR */
 
-static char samsung_elvss_condition[] = {
+static char samsung_elvss_condition1[] = {
 	0xB6,
-	0x28, 0x0B, /* 0x0B = 300cd */
+	0x28,
+};
+
+static char samsung_elvss_condition2[] = {
+	0xB0,
+	0x01,
+};
+
+static char samsung_elvss_condition3[] = {
+	0xB6,
+	0x0B,
 };
 
 static char samsung_acl_condition[] = {
@@ -174,21 +185,6 @@ static char samsung_panel_condition[] = {
 	0x00, 0x05, 0x80, 0x80, 0x0C,
 	0x01,
 };
-#elif (MIPI_CLK==395000000)	/* 130625 updated */
-static char samsung_panel_condition[] = {
-	0xCB,
-	0x06, 0x00, 0x00, 0x01, 0x01,
-	0x01, 0x01, 0x02, 0x00, 0x00,
-	0x30, 0x67, 0x89, 0x00, 0x4E,
-	0xAE, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x54, 0x9B,
-	0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x0C,
-	0x63, 0x0C, 0x63, 0x04, 0x04,
-	0x1C, 0x1C, 0x1C, 0x00, 0x00,
-	0x00, 0x04, 0x80, 0x80, 0x0C,
-	0x01
-};
 #elif (MIPI_CLK==365000000)	/* 130509 updated */
 static char samsung_panel_condition[] = {
 	0xCB,
@@ -219,7 +215,7 @@ static char samsung_brightness_aor_default[] = {
 static char samsung_brightness_aor_ref[] = {
 	0xB2,
 	0x40, 0x07, 0x1C, 0x00,
-	0x07,
+	0x08,
 };
 
 static char samsung_brightness_aor_pre[] = {
@@ -229,21 +225,25 @@ static char samsung_brightness_aor_pre[] = {
 };
 #endif /* USE_AOR */
 
-/* Register B0 is used in many case */
+static char samsung_brightness_elvss1_default[] = {
+	0xB6,
+	0x28,
+};
 
+/* Register B0 is used in many case */
 static char samsung_brightness_elvss1_global_para[] = {
 	0xB0,
-	0x03,
+	0x01,
 };
 
-static char samsung_brightness_elvss_ref[] = {
+static char samsung_brightness_elvss3_ref[] = {
 	0xB6,
-	0x0B, 0x00,
+	0x0B,
 };
 
-static char samsung_brightness_elvss_default[] = {
+static char samsung_brightness_elvss3_default[] = {
 	0xB6,
-	0x0B, 0x00,
+	0x0B,
 };
 
 static char samsung_brightness_acl_default[] = {
@@ -281,8 +281,8 @@ static char samsung_sleep_out[] = { 0x11, /* no param */ };
 static struct dsi_cmd_desc samsung_on_cmds [] = {
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
 		sizeof(samsung_test_key_on1), samsung_test_key_on1},
-	/*{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
-		sizeof(samsung_test_key_on2), samsung_test_key_on2},*/
+	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
+		sizeof(samsung_test_key_on2), samsung_test_key_on2},
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
 		sizeof(samsung_test_key_on3), samsung_test_key_on3},
 
@@ -310,25 +310,25 @@ static struct dsi_cmd_desc samsung_on_cmds [] = {
 		sizeof(samsung_gamma_update),
 			samsung_gamma_update},
 
-	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
-		sizeof(samsung_elvss_condition), samsung_elvss_condition},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+		sizeof(samsung_elvss_condition1), samsung_elvss_condition1},
+
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+		sizeof(samsung_elvss_condition2), samsung_elvss_condition2},
+
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+		sizeof(samsung_elvss_condition3), samsung_elvss_condition3},
 
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
 		sizeof(samsung_acl_condition), samsung_acl_condition},
 
-	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
-		sizeof(samsung_panel_condition), samsung_panel_condition},
-
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 120,
-		sizeof(samsung_gamma_update), samsung_gamma_update},
+		sizeof(samsung_panel_condition), samsung_panel_condition},
 
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
 		sizeof(samsung_avc_set_global), samsung_avc_set_global},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
 		sizeof(samsung_avc_set_power_control), samsung_avc_set_power_control},
-
-	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
-		sizeof(samsung_test_key_off3), samsung_test_key_off3},
 
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
 		sizeof(samsung_display_on), samsung_display_on},
@@ -513,10 +513,10 @@ static int get_candela_index(int bl_level)
 	case 30 ... 31:
 		backlightlevel = GAMMA_30CD;
 		break;
-	case 32 ... 33:
+	case 32:
 		backlightlevel = GAMMA_32CD;
 		break;
-	case 34 ... 36:
+	case 33 ... 36:
 		backlightlevel = GAMMA_34CD;
 		break;
 	case 37 ... 38:
@@ -591,10 +591,10 @@ static int get_candela_index(int bl_level)
 	case 150 ... 159:
 		backlightlevel = GAMMA_152CD;
 		break;
-	case 160 ... 171:
+	case 160 ... 170:
 		backlightlevel = GAMMA_162CD;
 		break;
-	case 172 ... 182:
+	case 171 ... 182:
 		backlightlevel = GAMMA_172CD;
 		break;
 	case 183 ... 194:
@@ -606,23 +606,17 @@ static int get_candela_index(int bl_level)
 	case 207 ... 219:
 		backlightlevel = GAMMA_207CD;
 		break;
-	case 220 ... 232:
+	case 220 ... 233:
 		backlightlevel = GAMMA_220CD;
 		break;
-	case 233 ... 248:
+	case 234 ... 254:
 		backlightlevel = GAMMA_234CD;
 		break;
-	case 249:
-		backlightlevel = GAMMA_249CD;
-		break;
-	case 250 ... 251:
-		backlightlevel = GAMMA_265CD;
-		break;
-	case 252 ... 253:
-		backlightlevel = GAMMA_282CD;
-		break;
-	case 254 ... 255:
-		backlightlevel = GAMMA_300CD;
+	case 255:
+		if(get_auto_brightness() > 4)
+			backlightlevel = GAMMA_300CD;
+		else
+			backlightlevel = GAMMA_249CD;
 		break;
 	default:
 		pr_info("%s lcd error bl_level : %d", __func__, bl_level);
@@ -748,51 +742,77 @@ static int brightness_control(int bl_level)
 	int candela;
 	int is_HBM;
 	int i;
+#ifdef HBM_OVERWRITING
+	int use_hbm_temp;
+#endif
 
 	char* b5_reg = get_b5_reg();
 	char* b6_reg = get_b6_reg();
 	char b5_reg_19 = get_b5_reg_19();
 
 	id3 = mipi_pd.manufacture_id & 0xFF;
-	is_HBM = (get_auto_brightness() == HBM_MODE_ID && id3 >= 5);
 
+	if (bl_level < 30)
+		bl_level = 30;
+
+	is_HBM = (get_auto_brightness() == HBM_MODE_ID);
+#ifdef HBM_OVERWRITING
+	use_hbm_temp = (is_HBM && b5_reg[0]==0 && b5_reg[1]==0);
+#endif
 	candela = lux_tbl[get_candela_index(bl_level)];
 
 	if (!mipi_pd.rst_brightness && mipi_pd.brightness_level == candela)	return 0;
 
-	pr_info("%s(mipi) level:%d, candela:%d, auto:%d, rst:%d, hbm:%d\n",
-		__func__, mipi_pd.brightness_level, candela, get_auto_brightness(), mipi_pd.rst_brightness, is_HBM);
+	pr_info("%s brightness_level : %d, candela : %d, auto : %d, rst : %d\n",
+		__func__, mipi_pd.brightness_level, candela, get_auto_brightness(), mipi_pd.rst_brightness);
 
 	cmd_size = 0;
 
 	/* elvss ****************************************************************************/
-	if (is_HBM)
-	{
+	/* 0xB6 setting */
+
+	/* Reset ELVSS Value : 0xB6 */
+	brightness_packet[cmd_size].dtype = DTYPE_DCS_WRITE1;
+	brightness_packet[cmd_size].payload =
+				samsung_brightness_elvss1_default; /* ELVSS contition set */
+	brightness_packet[cmd_size].dlen =
+				sizeof(samsung_brightness_elvss1_default);
+	brightness_packet[cmd_size].last = 0;
+	cmd_size++;
+
 	/* 0xB0 */
-		samsung_brightness_elvss1_global_para[1] = 0x10;
+	if (is_HBM)
+		samsung_brightness_elvss1_global_para[1] = 0x10; /*17th*/
+	else
+		samsung_brightness_elvss1_global_para[1] = 0x01;
 
 	brightness_packet[cmd_size].dtype = DTYPE_DCS_WRITE1;
 	brightness_packet[cmd_size].payload =
-					samsung_brightness_elvss1_global_para;
+				samsung_brightness_elvss1_global_para; /* register B0 */
 	brightness_packet[cmd_size].dlen =
 				sizeof(samsung_brightness_elvss1_global_para);
 	brightness_packet[cmd_size].last = 0;
 	cmd_size++;
 
 	/* 0xB6 */
-		samsung_brightness_elvss_ref[1] = b5_reg_19;
+	if (is_HBM)
+		samsung_brightness_elvss3_ref[1] = b5_reg_19;
+	else {
+		/* in manual, elvss_value += 17th para(ELVSS_CAL_OFFSET) */
+		/* it is not emplemented */
+		elvss_value = get_elvss_value(candela);
+		samsung_brightness_elvss3_ref[1] = elvss_value;
 	}
-	else samsung_brightness_elvss_ref[1] = 0x28;
 
-	/* 0xB6 setting */
-	elvss_value = get_elvss_value(candela);
-	samsung_brightness_elvss_ref[2] = elvss_value;
+#ifdef HBM_OVERWRITING
+	if( use_hbm_temp ) samsung_brightness_elvss3_ref[1] = 0x12;
+#endif
 
-	brightness_packet[cmd_size].dtype = DTYPE_DCS_LWRITE;
+	brightness_packet[cmd_size].dtype = DTYPE_DCS_WRITE1;
 	brightness_packet[cmd_size].payload =
-				samsung_brightness_elvss_ref;
+				samsung_brightness_elvss3_ref; /* ELVSS contition set */
 	brightness_packet[cmd_size].dlen =
-				sizeof(samsung_brightness_elvss_ref);
+				sizeof(samsung_brightness_elvss3_ref);
 	brightness_packet[cmd_size].last = 0;
 	cmd_size++;
 
@@ -816,7 +836,6 @@ static int brightness_control(int bl_level)
 		cmd_size++;
 	}
 #endif /* USE_AOR */
-
 	/* acl control *************************************************************************/
 	/* 0xB5 setting */
 	memcpy(samsung_brightness_acl_pre, samsung_brightness_acl_ref,
@@ -827,9 +846,8 @@ static int brightness_control(int bl_level)
 	else
 		samsung_brightness_acl_ref[1] = 0x00;
 
-	if ( mipi_pd.rst_brightness ||
-			memcmp(samsung_brightness_acl_pre, samsung_brightness_acl_ref,
-			sizeof(samsung_brightness_acl_ref))) {
+	if (memcmp(samsung_brightness_acl_pre, samsung_brightness_acl_ref,
+				sizeof(samsung_brightness_acl_ref))) {
 		brightness_packet[cmd_size].dtype = DTYPE_DCS_WRITE1;
 		brightness_packet[cmd_size].payload =
 				samsung_brightness_acl_ref;
@@ -856,6 +874,28 @@ static int brightness_control(int bl_level)
 			samsung_brightness_gamma[i] = *(b6_reg+(i-10));
 		for (i=22; i<=30 ; i++)
 			samsung_brightness_gamma[i] = 0x80;
+		samsung_brightness_gamma[31] = 0x02;
+		samsung_brightness_gamma[32] = 0x03;
+		samsung_brightness_gamma[33] = 0x02;
+
+#ifdef HBM_OVERWRITING
+		if( use_hbm_temp ) {
+			i = 1;
+			samsung_brightness_gamma[i++] = 0x01;
+			samsung_brightness_gamma[i++] = 0x1C;
+			samsung_brightness_gamma[i++] = 0x01;
+			samsung_brightness_gamma[i++] = 0x1C;
+			samsung_brightness_gamma[i++] = 0x01;
+			samsung_brightness_gamma[i++] = 0x1C;
+			for(; i<=30; i++ ) samsung_brightness_gamma[i] = 0x80;
+			samsung_brightness_gamma[i++] = 0x02;
+			samsung_brightness_gamma[i++] = 0x03;
+			samsung_brightness_gamma[i++] = 0x02;
+
+			if( i != 34 ) pr_err( "%s : ASSERT : HBM_OVERWRITING parameter", __func__ );
+			else pr_info( "%s : HBM_OVERWRITING", __func__ );
+		}
+#endif /* HBM_OVERWRITING */
 
 #ifdef CONFIG_HBM_PSRE_DEBUG
 		/*for debug*/
@@ -865,10 +905,6 @@ static int brightness_control(int bl_level)
 		printk("\n");
 #endif
 	}
-
-	samsung_brightness_gamma[31] = 0x00;
-	samsung_brightness_gamma[32] = 0x00;
-	samsung_brightness_gamma[33] = 0x00;
 
 	brightness_packet[cmd_size].dtype = DTYPE_DCS_LWRITE;
 	brightness_packet[cmd_size].payload = samsung_brightness_gamma;
@@ -929,19 +965,19 @@ void reset_bl_level(void)
 	}
 #endif /* USE_AOR */
 
-	if (memcmp(samsung_brightness_elvss_ref, samsung_brightness_elvss_default,
-				sizeof(samsung_brightness_elvss_default))) {
-		memcpy(samsung_elvss_condition,
-				samsung_brightness_elvss_ref,
-				sizeof(samsung_elvss_condition));
+	if (memcmp(samsung_brightness_elvss3_ref, samsung_brightness_elvss3_default,
+				sizeof(samsung_brightness_elvss3_default))) {
+		memcpy(samsung_elvss_condition3,
+				samsung_brightness_elvss3_ref,
+				sizeof(samsung_elvss_condition3));
 	}
 
 	/* reset brightness change value */
 	memcpy(samsung_brightness_acl_ref, samsung_brightness_acl_default,
 					sizeof(samsung_brightness_acl_ref));
 
-	memcpy(samsung_brightness_elvss_ref, samsung_brightness_elvss_default,
-					sizeof(samsung_brightness_elvss_default));
+	memcpy(samsung_brightness_elvss3_ref, samsung_brightness_elvss3_default,
+					sizeof(samsung_brightness_elvss3_default));
 
 #ifdef USE_AOR
 	memcpy(samsung_brightness_aor_ref, samsung_brightness_aor_default,
@@ -1003,25 +1039,9 @@ static struct mipi_dsi_phy_ctrl dsi_video_mode_phy_db = {
 	0x41, 0x0f, 0x01,
 	0x00, 0x14, 0x03, 0x00, 0x02, 0x00, 0x20, 0x00, 0x01},
 };
-#elif (MIPI_CLK==395000000)	/* 130625 updated */
-static struct mipi_dsi_phy_ctrl dsi_video_mode_phy_db = {
-	/* DSI_BIT_CLK at 495MHz, 2 lane, RGB888 */
-	{0x03, 0x0a, 0x04, 0x00, 0x20},	/* regulator */
-	/* timing   */
-	{0x72, 0x2e, 0x11, 0x00, 0x3c, 0x46, 0x14, 0x31,
-	0x1c, 0x03, 0x04, 0x00},	/* 395Mhz */
-	/* phy ctrl */
-	{0x5f, 0x00, 0x00, 0x10},
-	/* strength */
-	{0xff, 0x00, 0x06, 0x00},
-	/* pll control */
-	{0x0, 0x8a, 0x01, 0xda, 0x00, 0x50, 0x48, 0x63,
-	0x41, 0x0f, 0x01,
-	0x00, 0x14, 0x03, 0x00, 0x02, 0x00, 0x20, 0x00, 0x01},
-};
 #elif (MIPI_CLK==365000000)	/* 130509 updated */
 static struct mipi_dsi_phy_ctrl dsi_video_mode_phy_db = {
-	/* DSI_BIT_CLK at 365MHz, 2 lane, RGB888 */
+	/* DSI_BIT_CLK at 450MHz, 2 lane, RGB888 */
 	{0x03, 0x0a, 0x04, 0x00, 0x20},	/* regulator */
 	/* timing   */
 	{0x6c, 0x2c, 0x0f, 0x00, 0x39, 0x42, 0x13, 0x30,
@@ -1075,10 +1095,6 @@ printk(KERN_DEBUG "[lcd] mipi_video_ams367av_oled_wvga_pt_init start\n");
 	pinfo.lcdc.h_back_porch = 83;
 	pinfo.lcdc.h_front_porch = 200;
 	pinfo.lcdc.h_pulse_width = 2;
-#elif (MIPI_CLK==395000000)	/* 130625 updated */
-	pinfo.lcdc.h_back_porch = 71;
-	pinfo.lcdc.h_front_porch = 120;
-	pinfo.lcdc.h_pulse_width = 2;
 #elif (MIPI_CLK==365000000)	/* 130509 updated */
 	pinfo.lcdc.h_back_porch = 50;
 	pinfo.lcdc.h_front_porch = 90;
@@ -1090,7 +1106,7 @@ printk(KERN_DEBUG "[lcd] mipi_video_ams367av_oled_wvga_pt_init start\n");
 	pinfo.lcdc.v_pulse_width = 2;
 
 	pinfo.lcdc.border_clr = 0;	/* blk */
-	pinfo.lcdc.underflow_clr = 0x00;	/* black */
+	pinfo.lcdc.underflow_clr = 0xff;	/* blue */
 	pinfo.lcdc.hsync_skew = 0;
 	pinfo.bl_max = 255;
 	pinfo.bl_min = 1;

@@ -22,7 +22,6 @@ struct g2tsp_i2c {
     void *g2tsp_handle;
 };
 
-
 static s32 g2tsp_i2c_read_reg(void *handle, u8 addr, u8 *value)
 {
     int retval = 0;
@@ -30,7 +29,7 @@ static s32 g2tsp_i2c_read_reg(void *handle, u8 addr, u8 *value)
 
     retval = i2c_master_send(ts->client, &addr, 1);
     if (retval < 0) {
-		printk("%s() send Fail addr(%02x) !! \n", __func__, addr);	
+		printk("%s() send Fail !! \n", __func__);	
         return retval;
     }
     retval = i2c_master_recv(ts->client, value, 1);
@@ -124,7 +123,7 @@ static int __devinit g2tsp_i2c_probe(struct i2c_client *client, const struct i2c
     }
 
     /* register driver_data */
-#if G2TSP_NEW_IC		
+#if (G2TSP_NEW_IC == 1)		
     ts->client = client;
     i2c_set_clientdata(client, ts);
 

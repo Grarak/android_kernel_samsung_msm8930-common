@@ -110,10 +110,6 @@ static irqreturn_t pwrkey_press_irq(int irq, void *_pwrkey)
 {
 	struct pmic8xxx_pwrkey *pwrkey = _pwrkey;
 
-#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
-	printk(KERN_ERR "%s : pwrkey->press = %d\n", __func__, pwrkey->press);
-#endif
-
 		if(Is_folder_state()){
 		printk(KERN_ERR "[KEY] not report keypad : Folder is closed\n");
 			return 0;
@@ -122,14 +118,14 @@ static irqreturn_t pwrkey_press_irq(int irq, void *_pwrkey)
 	if (pwrkey->press == true) {
 		pwrkey->press = false;
 		return IRQ_HANDLED;
+	} else {
+		pwrkey->press = true;
 	}
 
 	pwrkey->powerkey_state = 1;
 
 	input_report_key(pwrkey->pwr, KEY_END, 1);
 	input_sync(pwrkey->pwr);
-	pwrkey->press = true;
-
 #if defined(CONFIG_SEC_DEBUG)
 	sec_debug_check_crash_key(KEY_POWER, 1);
 #endif
@@ -140,10 +136,6 @@ static irqreturn_t pwrkey_release_irq(int irq, void *_pwrkey)
 {
 	struct pmic8xxx_pwrkey *pwrkey = _pwrkey;
 
-#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
-	printk(KERN_ERR "%s : pwrkey->press = %d\n", __func__, pwrkey->press);
-#endif
-
 	if(Is_folder_state()){
 		printk(KERN_ERR "[KEY] not report keypad : Folder is closed\n");
 		return 0;
@@ -153,14 +145,14 @@ static irqreturn_t pwrkey_release_irq(int irq, void *_pwrkey)
 		input_report_key(pwrkey->pwr, KEY_END, 1);
 		input_sync(pwrkey->pwr);
 		pwrkey->press = true;
+	} else {
+		pwrkey->press = false;
 	}
 
 	pwrkey->powerkey_state = 0;
 
 	input_report_key(pwrkey->pwr, KEY_END, 0);
 	input_sync(pwrkey->pwr);
-	pwrkey->press = false;
-
 #if defined(CONFIG_SEC_DEBUG)
 	sec_debug_check_crash_key(KEY_POWER, 0);
 #endif

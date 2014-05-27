@@ -27,8 +27,8 @@
 #define LDI_GRAY	'1'
 #define LDI_WHITE	'2'
 
-#define DEFUALT_HIGH_THRESHOLD	11
-#define DEFUALT_LOW_THRESHOLD	8
+#define DEFUALT_HIGH_THRESHOLD	60
+#define DEFUALT_LOW_THRESHOLD	45
 /*************************************************************************/
 /* factory Sysfs                                                         */
 /*************************************************************************/
@@ -80,9 +80,9 @@ static ssize_t proximity_avg_store(struct device *dev,
 	return size;
 }
 
-static unsigned int get_proximity_rawdata(struct ssp_data *data)
+static unsigned char get_proximity_rawdata(struct ssp_data *data)
 {
-	unsigned int uRowdata = 0;
+	unsigned char uRowdata = 0;
 	char chTempbuf[2] = { 1, 20};
 
 	if (data->bProximityRawEnabled == false) {
@@ -268,7 +268,7 @@ static ssize_t proximity_cancel_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct ssp_data *data = dev_get_drvdata(dev);
-	unsigned int uProxCanc = data->uProxCanc;
+	unsigned char uProxCanc = data->uProxCanc;
 
 	if (uProxCanc > (DEFUALT_LOW_THRESHOLD >> 1))
 		uProxCanc = uProxCanc - (DEFUALT_LOW_THRESHOLD >> 1);

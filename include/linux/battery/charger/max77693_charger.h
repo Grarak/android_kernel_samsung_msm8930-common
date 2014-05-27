@@ -22,11 +22,6 @@
 #include <linux/mfd/max77693-private.h>
 #include <linux/regulator/machine.h>
 
-#if defined(CONFIG_MACH_MELIUS_SKT) || defined(CONFIG_MACH_MELIUS_KTT) || \
-	defined(CONFIG_MACH_MELIUS_LGT)
-#define FEATURE_SIOP_INPUT_LIMIT_CURRENT
-#endif
-
 /*
  * Use for battery
  */
@@ -166,9 +161,4 @@ enum {
 	POWER_SUPPLY_VBUS_OVLO,
 	POWER_SUPPLY_VBUS_GOOD,
 };
-
-struct sec_chg_info {
-	bool dummy;
-};
-
 #endif

@@ -88,10 +88,6 @@ static bool hdmi_msm_cable_connected(void);
 #include <linux/kernel.h>
 #endif
 
-#ifdef CONFIG_SAMSUNG_HDMI_OFF_WORKAROUND
-extern boolean  mdp_shutdown_check_for_hdmi;
-#endif
-
 /* Enable HDCP by default */
 static bool hdcp_feature_on = true;
 
@@ -4576,11 +4572,7 @@ static int hdmi_msm_power_off(struct platform_device *pdev)
 
 /*	SWITCH_SET_HDMI_AUDIO(-1, 0); */
 
-	if (!hdmi_msm_is_dvi_mode()
-#ifdef CONFIG_SAMSUNG_HDMI_OFF_WORKAROUND
-		&& !mdp_shutdown_check_for_hdmi
-#endif
-		)
+	if (!hdmi_msm_is_dvi_mode())
 		hdmi_msm_audio_off();
 
 	hdmi_msm_powerdown_phy();
@@ -4870,8 +4862,7 @@ static int hdmi_msm_hpd_feature(int on)
 		return rc;
 
 	if (on) {
-		if(external_common_state->mhl_hpd_state)
-			rc = hdmi_msm_hpd_on();
+		rc = hdmi_msm_hpd_on();
 	} else {
 		if (external_common_state->hpd_state) {
 #ifdef	__CONFIG_MODIFY_HDCP_FAIL__

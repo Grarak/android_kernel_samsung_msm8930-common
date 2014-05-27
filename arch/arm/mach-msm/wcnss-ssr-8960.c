@@ -249,22 +249,18 @@ static int __init riva_ssr_module_init(void)
 	if (ret < 0) {
 		pr_err("%s: Unable to register with ssr. (%d)\n",
 				MODULE_NAME, ret);
-		goto restart_init_fail;
+		goto out;
 	}
 	riva_ramdump_dev = create_ramdump_device("riva");
 	if (!riva_ramdump_dev) {
 		pr_err("%s: Unable to create ramdump device.\n",
 				MODULE_NAME);
 		ret = -ENOMEM;
-		goto ramdump_device_fail;
+		goto out;
 	}
 	INIT_DELAYED_WORK(&cancel_vote_work, riva_post_bootup);
 
 	pr_info("%s: module initialized\n", MODULE_NAME);
-ramdump_device_fail:
-    subsys_unregister(riva_8960_dev);
-restart_init_fail:
-    free_irq(RIVA_APSS_WDOG_BITE_RESET_RDY_IRQ, NULL);
 out:
 	return ret;
 }

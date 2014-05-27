@@ -21,21 +21,20 @@
  */
 
 /* MSM8930 GPIO */
-
-/* CAMERA */
-#define	GPIO_CAM_CORE_EN			1
-#define	GPIO_CAM_FLASH_SOURCE_EN	3
-#define	GPIO_SUB_CAM_MCLK			4
-#define	GPIO_MAIN_CAM_MCLK			5
+#define	GPIO_CAM_IO_EN			1
+#define	GPIO_MSM_FLASH_NOW		3
+#define	GPIO_SUB_CAM_MCLK		4
+#define	GPIO_MAIN_CAM_MCLK		5
+#define	GPIO_VT_STBY				18
 #define	GPIO_CAM_A_EN				47
-#define	GPIO_CAM_FLASH_SET			63
-#define	GPIO_CAM_FLASH_EN			64
+#define	GPIO_MSM_FLASH_CNTL_EN	64
+#define	GPIO_CAM_AF_EN			66
+#define	GPIO_CAM2_RST_N			76
+#define	GPIO_CAM1_RST_N			107
 #define GPIO_I2C_DATA_CAM			20
 #define GPIO_I2C_CLK_CAM			21
-#define GPIO_MAIN_STBY				51
-#define GPIO_VT_STBY				52
-#define	GPIO_CAM2_RST_N				76
-#define	GPIO_CAM1_RST_N				107
+#define GPIO_I2C_DATA_AF			51
+#define GPIO_I2C_CLK_AF				52
 
 #define GPIO_TOUCH_IRQ		11
 #define GPIO_TOUCH_SDA		16
@@ -43,21 +42,22 @@
 #define GPIO_UART_RXD			23
 #define GPIO_HOME_KEY		35
 #define GPIO_VOLUME_UP		50
-#define GPIO_KEY_MENU		33
-#define GPIO_KEY_BACK		6
-#define GPIO_VIRTUAL_EYE_KEY	150
-#define GPIO_VOICEKEY	65
 #define GPIO_TKEY_LED			51
+#define GPIO_MAIN_STBY			54
+#define GPIO_VIB_EN			63
+#define GPIO_FLASH_LED_UNLOCK   64
 
 #define GPIO_TKEY_INT		65
-#define GPIO_SD_CARD_DET_N	66
+#define GPIO_SD_CARD_DET_N	39
 #define GPIO_VIB_PWM			70
+#define GPIO_S_LED_I2C_SDA		38
+#define GPIO_S_LED_I2C_SCL		39
 #ifdef CONFIG_USB_SWITCH_TSU6721
-#define GPIO_USB_I2C_SDA		101
-#define GPIO_USB_I2C_SCL        100
+#define GPIO_USB_I2C_SDA		101 
+#define GPIO_USB_I2C_SCL        100 
 #else
-#define GPIO_IF_PMIC_SDA		101
-#define GPIO_IF_PMIC_SCL        100
+#define GPIO_IF_PMIC_SDA		101 
+#define GPIO_IF_PMIC_SCL        100 
 #define GPIO_IF_PMIC_IRQ		14
 #endif
 #define GPIO_HALL_SENSOR_INT	78
@@ -87,11 +87,17 @@
 
 #define GPIO_SHORT_SENDEND		94
 
+#if defined(CONFIG_SAMSUNG_JACK_GNDLDET)
+#define GPIO_EAR_DET			43
+#define GPIO_EAR_GND			46
+#else
 #define GPIO_EAR_DET			46
 #define GPIO_EAR_GND			43
+#endif
 
 #define GPIO_TOUCHKEY_I2C_SDA		24
 #define GPIO_TOUCHKEY_I2C_SCL		25
+#define GPIO_2MIC_PW_DN			63
 #ifdef CONFIG_2MIC_ES305
 #define GPIO_2MIC_I2C_SDA		40
 #define GPIO_2MIC_I2C_SCL		41
@@ -126,7 +132,8 @@
 
 #define GPIO_SENSOR_ALS_SDA		12
 #define GPIO_SENSOR_ALS_SCL		13
-#define GPIO_ACC_INT			67
+#define GPIO_ACC_INT_N			67
+#define GPIO_GYRO_INT			67
 #define GPIO_LEDA_EN			89
 #define GPIO_PROX_INT			49
 /* MHL/HDMI */
@@ -151,9 +158,6 @@
 /* OTG */
 #define GPIO_OTG_TEST		150
 #define GPIO_OVP_CTRL		PM8038_GPIO_PM_TO_SYS(15)
-
-/* LCD */
-#define GPIO_ESD_VGH_DET		19
 
 #if defined(CONFIG_WCD9304_CLK_9600)
 #define CLK_REVISION 0

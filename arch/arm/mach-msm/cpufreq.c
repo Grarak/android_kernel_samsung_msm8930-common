@@ -27,7 +27,6 @@
 #include <linux/cpumask.h>
 #include <linux/sched.h>
 #include <linux/suspend.h>
-#include <linux/err.h>
 #include <mach/socinfo.h>
 #include <mach/cpufreq.h>
 
@@ -522,10 +521,6 @@ static int __init msm_cpufreq_register(void)
 	}
 
 	msm_cpufreq_wq = create_workqueue("msm-cpufreq");
-
-	if(IS_ERR_OR_NULL(msm_cpufreq_wq))
-		return PTR_ERR(msm_cpufreq_wq);
-
 	register_hotcpu_notifier(&msm_cpufreq_cpu_notifier);
 	register_early_suspend(&msm_cpu_early_suspend_handler);
 

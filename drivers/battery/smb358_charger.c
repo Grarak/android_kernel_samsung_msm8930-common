@@ -1,7 +1,7 @@
 /*
  *  smb358_charger.c
  *  Samsung SMB358 Charger Driver
- *
+ *  	ddddd
  *  Copyright (C) 2012 Samsung Electronics
  *
  *
@@ -9,8 +9,6 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
-
-#define DEBUG
 
 #include <linux/battery/sec_charger.h>
 #include <linux/debugfs.h>
@@ -157,25 +155,23 @@ static void smb358_set_command(struct i2c_client *client,
 		dev_err(&client->dev, "%s : error!\n", __func__);
 }
 
-#if 0
 static void smb358_test_read(struct i2c_client *client)
 {
 	u8 data = 0;
 	u32 addr = 0;
 	for (addr = 0; addr <= 0x0f; addr++) {
 		smb358_i2c_read(client, addr, &data);
-		dev_dbg(&client->dev,
+		dev_info(&client->dev,
 			"%s : smb358 addr : 0x%02x data : 0x%02x\n",
 						__func__, addr, data);
 	}
 	for (addr = 0x30; addr <= 0x3f; addr++) {
 		smb358_i2c_read(client, addr, &data);
-		dev_dbg(&client->dev,
+		dev_info(&client->dev,
 			"%s : smb358 addr : 0x%02x data : 0x%02x\n",
 						__func__, addr, data);
 	}
 }
-#endif
 
 static void smb358_read_regs(struct i2c_client *client, char *str)
 {
@@ -205,11 +201,6 @@ static int smb358_get_charging_status(struct i2c_client *client)
 	u8 data_c = 0;
 	u8 data_d = 0;
 	u8 data_e = 0;
-
-	/* need delay to update charger status */
-	msleep(500);
-
-	/*smb358_test_read(client);*/
 
 	smb358_i2c_read(client, SMB358_STATUS_A, &data_a);
 	dev_dbg(&client->dev,
@@ -278,14 +269,15 @@ static int smb358_get_charging_health(struct i2c_client *client)
 	dev_dbg(&client->dev,
 		"%s : charger status E(0x%02x)\n", __func__, data_e);
 
-	smb358_i2c_read(client, SMB358_INTERRUPT_STATUS_E, &data_e);
-	dev_dbg(&client->dev,
-		"%s : charger interrupt status E(0x%02x)\n", __func__, data_e);
+	/* Is enabled ? */
+	if (data_c & 0x01) {
+		smb358_i2c_read(client, SMB358_INTERRUPT_STATUS_E, &data_e);
 
-	if (data_e & 0x01)
-		health = POWER_SUPPLY_HEALTH_UNDERVOLTAGE;
-	else if (data_e & 0x04)
-		health = POWER_SUPPLY_HEALTH_OVERVOLTAGE;
+		if (data_e & 0x01)
+			health = POWER_SUPPLY_HEALTH_UNDERVOLTAGE;
+		else if (data_e & 0x04)
+			health = POWER_SUPPLY_HEALTH_OVERVOLTAGE;
+	}
 
 	return (int)health;
 }
@@ -356,7 +348,7 @@ static u8 smb358_get_input_current_limit_data(
 	return (data << 4);
 }
 
-static u8 smb358_get_term_current_limit_data(
+static u8 smb358_get_termination_current_limit_data(
 			int termination_current)
 {
 	u8 data;
@@ -410,16 +402,6 @@ static u8 smb358_get_fast_charging_current_data(
 	return data << 5;
 }
 
-static void smb358_enter_suspend(struct i2c_client *client)
-{
-	u8 data = 0;
-
-	pr_info("%s: ENTER SUSPEND\n", __func__);
-	smb358_set_command(client, SMB358_COMMAND_A, 0x80);
-	smb358_set_command(client, SMB358_PIN_ENABLE_CONTROL, 0x18);
-	data = (data | 0x4);
-	smb358_set_command(client, SMB358_COMMAND_A, data);
-}
 static void smb358_charger_function_control(
 				struct i2c_client *client)
 {
@@ -440,66 +422,21 @@ static void smb358_charger_function_control(
 	}
 	smb358_volatile_writes(client, SMB358_ENABLE_WRITE);
 
-	if (charger->health ==
-		POWER_SUPPLY_HEALTH_UNSPEC_FAILURE) {
-		pr_info("[SMB358] Unspec_failure, charger suspend\n");
-		smb358_enter_suspend(client);
-	}
-	else if (charger->cable_type ==
+	if (charger->cable_type ==
 		POWER_SUPPLY_TYPE_BATTERY) {
-#if defined(CONFIG_MACH_BISCOTTO)
-		if (charger->pdata->check_vbus_status()) {
-			/* Charger, Input current Disabled */
-			smb358_set_command(client, SMB358_COMMAND_A, 0xc4);
-			dev_dbg(&client->dev,
-				"%s : no input current!\n", __func__);
-		} else
-			smb358_set_command(client, SMB358_COMMAND_A, 0xc0);
-#else
 		/* Charger Disabled */
-		smb358_set_command(client, SMB358_COMMAND_A, 0xc0);
-#endif
-
-		pr_info("[SMB358] Set the registers to the default configuration\n");
-		/* Set the registers to the default configuration */
-		smb358_set_command(client, SMB358_CHARGE_CURRENT, 0xFC);
-		smb358_set_command(client, SMB358_INPUT_CURRENTLIMIT, 0x74);
-		smb358_set_command(client, SMB358_VARIOUS_FUNCTIONS, 0xD7);
-		data = 0x00;
-		data |= smb358_get_float_voltage_data(charger->pdata->chg_float_voltage);
-		smb358_set_command(client, SMB358_FLOAT_VOLTAGE, data);
-		/* Disable Automatic Recharge */
-		smb358_set_command(client, SMB358_CHARGE_CONTROL, 0x84);
-		smb358_set_command(client, SMB358_STAT_TIMERS_CONTROL, 0x0F);
-		smb358_set_command(client, SMB358_PIN_ENABLE_CONTROL, 0x09);
-		smb358_set_command(client, SMB358_THERM_CONTROL_A, 0xF0);
-		smb358_set_command(client, SMB358_SYSOK_USB30_SELECTION, 0x09);
-		smb358_set_command(client, SMB358_OTHER_CONTROL_A, 0x00);
-		smb358_set_command(client, SMB358_OTG_TLIM_THERM_CONTROL, 0xF6);
-		smb358_set_command(client, SMB358_LIMIT_CELL_TEMPERATURE_MONITOR, 0xA5);
-		smb358_set_command(client, SMB358_FAULT_INTERRUPT, 0x00);
-		smb358_set_command(client, SMB358_STATUS_INTERRUPT, 0x00);
+		smb358_set_command(client, SMB358_COMMAND_B, 0x00);
 
 	} else {
-		psy_do_property("battery", get,
-			POWER_SUPPLY_PROP_CHARGE_NOW, val);
-		if (val.intval == SEC_BATTERY_CHARGING_1ST)
-			full_check_type = charger->pdata->full_check_type;
-		else
-			full_check_type = charger->pdata->full_check_type_2nd;
 
 		/* [STEP - 1] ================================================
                  * Volatile write permission(bit 7) - allow(1)
-                 * Charging Enable(bit 1) - Disabled(0, default)
-                 * STAT Output(bit 0) - Enabled(0)
+                 * Charging Enable(bit 1) - Enabled(1)
+                 * STAT Output(bit 1) - Enabled(1)
                 */
-#if defined(CONFIG_MACH_LT02)
-		smb358_set_command(client,
-			SMB358_COMMAND_A, 0xC2);
-#else
-		smb358_set_command(client,
-                        SMB358_COMMAND_A, 0xC0);
-#endif
+                smb358_set_command(client,
+                        SMB358_COMMAND_A, 0xC2);
+
                 /* [STEP - 2] ================================================
                  * USB 5/1(9/1.5) Mode(bit 1) - USB1/USB1.5(0), USB5/USB9(1)
                  * USB/HC Mode(bit 0) - USB5/1 or USB9/1.5 Mode(0)
@@ -536,33 +473,17 @@ static void smb358_charger_function_control(
 		dev_info(&client->dev,
 			"%s : fast charging current (%dmA)\n",
 			__func__, charger->charging_current);
+		dev_info(&client->dev,
+			"%s : termination current (%dmA)\n",
+			__func__, charger->pdata->charging_current[
+			charger->cable_type].full_check_current_1st);
 
 		data = 0x18;
 		data |= smb358_get_fast_charging_current_data(
 			charger->charging_current);
-		switch (full_check_type) {
-		case SEC_BATTERY_FULLCHARGED_CHGGPIO:
-		case SEC_BATTERY_FULLCHARGED_CHGINT:
-		case SEC_BATTERY_FULLCHARGED_CHGPSY:
-			if (val.intval == SEC_BATTERY_CHARGING_1ST) {
-				dev_info(&client->dev,
-					"%s : termination current (%dmA)\n",
-					__func__, charger->pdata->charging_current[
-					charger->cable_type].full_check_current_1st);
-				data |= smb358_get_term_current_limit_data(
-					charger->pdata->charging_current[
-					charger->cable_type].full_check_current_1st);
-			} else {
-				dev_info(&client->dev,
-					"%s : termination current (%dmA)\n",
-					__func__, charger->pdata->charging_current[
-					charger->cable_type].full_check_current_2nd);
-				data |= smb358_get_term_current_limit_data(
-					charger->pdata->charging_current[
-					charger->cable_type].full_check_current_2nd);
-			}
-			break;
-		}
+		data |= smb358_get_termination_current_limit_data(
+			charger->pdata->charging_current[
+			charger->cable_type].full_check_current_1st);
 		smb358_set_command(client,
 			SMB358_CHARGE_CURRENT, data);
 
@@ -604,14 +525,10 @@ static void smb358_charger_function_control(
 			/* disable AICL */
 			smb358_set_command(client,
 				SMB358_VARIOUS_FUNCTIONS, 0x81);
-		else {
-			/* disable AICL */
-			smb358_set_command(client,
-				SMB358_VARIOUS_FUNCTIONS, 0x81);
+		else
 			/* enable AICL */
 			smb358_set_command(client,
 				SMB358_VARIOUS_FUNCTIONS, 0x95);
-		}
 
 		/* [STEP - 7] =================================================
 		 * Pre-charged to Fast-charge Voltage Threshold(Bit 7:6) - 2.3V
@@ -619,7 +536,7 @@ static void smb358_charger_function_control(
 		*/
 		dev_dbg(&client->dev, "%s : float voltage (%dmV)\n",
 				__func__, charger->pdata->chg_float_voltage);
-		data = 0x00;
+		data = 0x00 ;
 		data |= smb358_get_float_voltage_data(
 			charger->pdata->chg_float_voltage);
 		smb358_set_command(client,
@@ -634,17 +551,20 @@ static void smb358_charger_function_control(
 		 * INOK Output Configuration : Push-pull(bit 3)
 		 * APSD disable
 		*/
-#if defined(CONFIG_MACH_LT02)
 		data = 0xC0;
-#else
-		data = 0xC1;
-#endif
+		psy_do_property("battery", get,
+			POWER_SUPPLY_PROP_CHARGE_NOW, val);
+		if (val.intval == SEC_BATTERY_CHARGING_1ST)
+			full_check_type = charger->pdata->full_check_type;
+		else
+			full_check_type = charger->pdata->full_check_type_2nd;
+
 		switch (full_check_type) {
 		case SEC_BATTERY_FULLCHARGED_CHGGPIO:
 		case SEC_BATTERY_FULLCHARGED_CHGINT:
 		case SEC_BATTERY_FULLCHARGED_CHGPSY:
 			/* Enable Current Termination */
-			data &= 0xB1;
+			data &= 0xB0;
 			break;
 		}
 		smb358_set_command(client,
@@ -652,41 +572,29 @@ static void smb358_charger_function_control(
 
 		/* [STEP - 9] =================================================
 		 *  STAT active low(bit 7),
-		 *  Complete charge Timeout(bit 3:2) - Disabled(11)
+		 *  Complete charge Timeou(bit 3:2) - Disabled(11)
 		 *  Pre-charge Timeout(bit 1:0) - Disable(11)
 		*/
 		smb358_set_command(client,
 			SMB358_STAT_TIMERS_CONTROL, 0x1F);
 
 
-#if defined(CONFIG_MACH_LT02)
 		/* [STEP - 10] =================================================
-		 * Mininum System Voltage(bit 6) - 3.15v(1)
+		 * Mininum System Voltage(bit 6) - 3.6v(1)
 		 * Therm monitor(bit 4) - Disabled(1)
 		 * Soft Cold/Hot Temp Limit Behavior(bit 3:2, bit 1:0) -
 		 *	Charger Current + Float voltage Compensation(11)
 		*/
 		smb358_set_command(client,
-			SMB358_THERM_CONTROL_A, 0xB0);
-#else
-		/* [STEP - 10] =================================================
-		 * Mininum System Voltage(bit 6) - 3.75v(1)
-		 * Therm monitor(bit 4) - Disabled(1)
-		 * Soft Cold/Hot Temp Limit Behavior(bit 3:2, bit 1:0) -
-		 *	Charger Current + Float voltage Compensation(11)
-		*/
-		smb358_set_command(client,
-			SMB358_THERM_CONTROL_A, 0xF0);
-#endif
+			SMB358_THERM_CONTROL_A, 0xFF);
+
 		/* [STEP - 11] ================================================
 		 * OTG/ID Pin Control(bit 7:6) - RID Disabled, OTG I2c(00)
-		 * Minimum System Voltage(bit 4) - 3.75V(1)
-		 * Low-Battery/SYSOK Voltage threshold(bit 3:0) - 2.5V(0001)
-		 *    if this bit is disabled,
-		 *    input current for system will be disabled
-		 */
+		 * Minimum System Voltage(bit 4) - 3.6V
+		 * Low-Battery/SYSOK Voltage threshold(bit 3:0) - Disabled(0000)
+		*/
 		smb358_set_command(client,
-			SMB358_OTHER_CONTROL_A, 0x11);
+			SMB358_OTHER_CONTROL_A, 0x00);
 
 		/* [STEP - 12] ================================================
 		 * Charge Current Compensation(bit 7:6) - 200mA(00)
@@ -715,15 +623,6 @@ static void smb358_charger_function_control(
 		smb358_set_command(client,
 			SMB358_STATUS_INTERRUPT, 0x00);
 
-		/* [STEP - 16] ================================================
-		 * Volatile write permission(bit 7) - allowed(1)
-		 * Charging Enable(bit 1) - Enabled(1)
-		 * STAT Output(bit 0) - Enabled(0)
-		*/
-#if !defined(CONFIG_MACH_LT02)
-		smb358_set_command(client,
-			SMB358_COMMAND_A, 0xC2);
-#endif
 	}
 
 	smb358_volatile_writes(client, SMB358_DISABLE_WRITE);
@@ -762,14 +661,10 @@ static void smb358_set_charging_current(
 {
 	u8 data;
 
-	smb358_volatile_writes(client, SMB358_ENABLE_WRITE);
-
 	smb358_i2c_read(client, SMB358_CHARGE_CURRENT, &data);
-	data &= 0x1f;
+	data &= 0xe0;
 	data |= smb358_get_fast_charging_current_data(charging_current);
 	smb358_set_command(client, SMB358_CHARGE_CURRENT, data);
-
-	smb358_volatile_writes(client, SMB358_DISABLE_WRITE);
 }
 
 static void smb358_set_charging_input_current_limit(
@@ -778,25 +673,11 @@ static void smb358_set_charging_input_current_limit(
 	struct sec_charger_info *charger = i2c_get_clientdata(client);
 	u8 data;
 
-	smb358_volatile_writes(client, SMB358_ENABLE_WRITE);
-
 	/* Input current limit */
 	data = 0;
 	data = smb358_get_input_current_limit_data(
 		charger, input_current_limit);
 	smb358_set_command(client, SMB358_INPUT_CURRENTLIMIT, data);
-
-	smb358_volatile_writes(client, SMB358_DISABLE_WRITE);
-}
-
-void smb358_charger_shutdown(struct i2c_client *client)
-{
-	pr_info("%s: smb358 Charging Disabled\n", __func__);
-
-	smb358_volatile_writes(client, SMB358_ENABLE_WRITE);
-	smb358_set_command(client, SMB358_THERM_CONTROL_A, 0xF0);
-	smb358_set_command(client, SMB358_COMMAND_A, 0x80);
-	smb358_volatile_writes(client, SMB358_DISABLE_WRITE);
 }
 
 static int smb358_debugfs_show(struct seq_file *s, void *data)
@@ -840,7 +721,7 @@ bool sec_hal_chg_init(struct i2c_client *client)
 	dev_info(&client->dev,
 		"%s: SMB358 Charger init(Start)!!\n", __func__);
 
-	/*smb358_test_read(client);*/
+	smb358_test_read(client);
 	(void) debugfs_create_file("smb358_regs",
 		S_IRUGO, NULL, (void *)charger, &smb358_debugfs_fops);
 
@@ -884,6 +765,21 @@ bool sec_hal_chg_get_property(struct i2c_client *client,
 		if (charger->charging_current) {
 			smb358_i2c_read(client, SMB358_STATUS_B, &data);
 			if (data & 0x20)
+				switch ((data & 0x18) >> 3) {
+				case 0:
+					val->intval = 100;
+					break;
+				case 1:
+					val->intval = 150;
+					break;
+				case 2:
+					val->intval = 200;
+					break;
+				case 3:
+					val->intval = 250;
+					break;
+				}
+			else
 				switch (data & 0x07) {
 				case 0:
 					val->intval = 100;
@@ -908,21 +804,6 @@ bool sec_hal_chg_get_property(struct i2c_client *client,
 					break;
 				case 7:
 					val->intval = 1800;
-					break;
-				}
-			else
-				switch ((data & 0x18) >> 3) {
-				case 0:
-					val->intval = 100;
-					break;
-				case 1:
-					val->intval = 150;
-					break;
-				case 2:
-					val->intval = 200;
-					break;
-				case 3:
-					val->intval = 250;
 					break;
 				}
 		} else
@@ -954,7 +835,7 @@ bool sec_hal_chg_set_property(struct i2c_client *client,
 			smb358_charger_function_control(client);
 			smb358_charger_otg_control(client);
 		}
-		/*smb358_test_read(client);*/
+		smb358_test_read(client);
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_MAX:	/* input current limit set */
 	/* calculated input current limit value */

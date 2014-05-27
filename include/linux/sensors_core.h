@@ -8,9 +8,6 @@
  * published by the Free Software Foundation.
  *
  */
- 
-#include <linux/input.h>
-
 #ifndef __LINUX_SENSORS_CORE_H_INCLUDED
 #define __LINUX_SENSORS_CORE_H_INCLUDED
 extern struct device *sensors_classdev_register(char *sensors_name);

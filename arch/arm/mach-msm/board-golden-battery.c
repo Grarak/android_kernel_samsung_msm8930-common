@@ -34,7 +34,6 @@
 #include <linux/battery/sec_charger.h>
 
 #define SEC_BATTERY_PMIC_NAME ""
-#define GPIO_INOK	43
 
 extern int current_cable_type;
 extern unsigned int system_rev;
@@ -44,18 +43,18 @@ sec_battery_platform_data_t sec_battery_pdata;
 #if defined(CONFIG_MACH_GOLDEN)
 #if defined(CONFIG_MACH_GOLDEN_ATT) || defined(CONFIG_MACH_GOLDEN_VZW)
 static sec_charging_current_t charging_current_table[] = {
-	{1000,	1000,	150,	40*60},	/* Unknown */
+	{1000,	1000,	200,	40*60},	/* Unknown */
 	{0,	0,	0,	0},					/* Battery */
 	{0,	0,	0,	0},					/* UPS */
-	{1000,	1000,	150,	40*60},	/* MAINS */
-	{460,	460,	150,	40*60},	/* USB */
-	{460,	460,	150,	40*60},	/* USB_DCP */
-	{1000,	1000,	150,	40*60},	/* USB_CDP */
-	{460,	460,	150,	40*60},	/* USB_ACA */
-	{1000,	1000,	150,	40*60},	/* MISC */
+	{1000,	1000,	200,	40*60},	/* MAINS */
+	{460,	460,	200,	40*60},	/* USB */
+	{460,	460,	200,	40*60},	/* USB_DCP */
+	{1000,	1000,	200,	40*60},	/* USB_CDP */
+	{460,	460,	200,	40*60},	/* USB_ACA */
+	{1000,	1000,	200,	40*60},	/* MISC */
 	{0,	0,	0,	0},					/* Cardock */
-	{500,	500,	150,	40*60},	/* Wireless */
-	{1000,	1000,	150,	40*60},	/* UartOff */
+	{500,	500,	200,	40*60},	/* Wireless */
+	{1000,	1000,	200,	40*60},	/* UartOff */
 	{0,	0,	0,	0},					/* OTG */
 	{0,	0,	0,	0},					/* BMS */
 };
@@ -140,9 +139,6 @@ static int sec_bat_adc_ic_read(unsigned int channel) {return 0; }
 
 static bool sec_bat_gpio_init(void)
 {
-	gpio_tlmm_config(GPIO_CFG(GPIO_INOK, 0, GPIO_CFG_INPUT,
-		 GPIO_CFG_NO_PULL, GPIO_CFG_2MA), 1);
-
 	return true;
 }
 
@@ -154,12 +150,11 @@ static struct i2c_gpio_platform_data gpio_i2c_data_fgchg = {
 static bool sec_fg_gpio_init(void)
 {
 	sec_battery_pdata.fg_irq = MSM_GPIO_TO_INT(GPIO_FUEL_INT);
-	gpio_tlmm_config(GPIO_CFG(GPIO_FUEL_INT, 0,
+	gpio_tlmm_config(GPIO_CFG(gpio_i2c_data_fgchg.scl_pin, 0,
 			GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_2MA), 1);
 
-#if defined(CONFIG_MACH_GOLDEN_ATT) || defined(CONFIG_MACH_GOLDEN_VZW)
-	sec_battery_pdata.chg_float_voltage = 4340;
-#endif
+	gpio_tlmm_config(GPIO_CFG(GPIO_FUEL_INT, 0,
+			GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_2MA), 1);
 
 	/* FUEL_ALERT Setting */
 	pr_info("%s:system_rev (%d)\n",__func__, system_rev);
@@ -186,39 +181,21 @@ int extended_cable_type;
 static void sec_bat_initial_check(void)
 {
 	union power_supply_propval value;
-	value.intval = 0;
-	pr_err("%s: current_cable_type :%d\n", __func__, current_cable_type);
 
 	if (POWER_SUPPLY_TYPE_BATTERY < current_cable_type) {
 		value.intval = current_cable_type<<ONLINE_TYPE_MAIN_SHIFT;
-
+		psy_do_property("battery", set,
+				POWER_SUPPLY_PROP_ONLINE, value);
 	} else {
 		psy_do_property("sec-charger", get,
 				POWER_SUPPLY_PROP_ONLINE, value);
 		if (value.intval == POWER_SUPPLY_TYPE_WIRELESS) {
 			value.intval =
 			POWER_SUPPLY_TYPE_WIRELESS<<ONLINE_TYPE_MAIN_SHIFT;
-
+			psy_do_property("battery", set,
+					POWER_SUPPLY_PROP_ONLINE, value);
 		}
 	}
-	if (current_cable_type == POWER_SUPPLY_TYPE_BATTERY &&
-	gpio_get_value_cansleep(GPIO_INOK)) {
-		pr_info("%s : VBUS IN\n", __func__);
-		value.intval = POWER_SUPPLY_TYPE_UARTOFF<<ONLINE_TYPE_MAIN_SHIFT;
-	}
-	if (value.intval)
-			psy_do_property("battery", set,
-				POWER_SUPPLY_PROP_ONLINE, value);
-}
-#if defined(CONFIG_USB_SWITCH_TSU6721)
-extern void tsu6721_monitor(void);
-#endif
-
-static void sec_bat_monitor_additional_check(void)
-{
-#if defined(CONFIG_USB_SWITCH_TSU6721)
-	tsu6721_monitor();
-#endif
 }
 
 static bool sec_bat_check_jig_status(void)
@@ -354,32 +331,25 @@ static bool sec_bat_check_cable_result_callback(
 	struct regulator *l29;
 	current_cable_type = cable_type;
 
-	if(system_rev < 0x3)
+	if(system_rev >= 0x8)
 	{
 		if (current_cable_type == POWER_SUPPLY_TYPE_BATTERY)
 		{
 			pr_info("%s set ldo off\n", __func__);
 			l29 = regulator_get(NULL, "8921_l29");
 			if(l29 > 0)
+			{
 				regulator_disable(l29);
+			}
 		}
 		else
 		{
 			pr_info("%s set ldo on\n", __func__);
 			l29 = regulator_get(NULL, "8921_l29");
 			if(l29 > 0)
+			{
 				regulator_enable(l29);
-		}
-	} else {
-		if (current_cable_type == POWER_SUPPLY_TYPE_BATTERY)
-		{
-			pr_info("%s set Vref_batt_therm off\n", __func__);
-			pm8921_enable_batt_therm(0);
-		}
-		else
-		{
-			pr_info("%s set Vref_batt_therm on\n", __func__);
-			pm8921_enable_batt_therm(1);
+			}
 		}
 	}
 	return true;
@@ -492,19 +462,7 @@ static int polling_time_table[] = {
 	30,	/* NOT_CHARGING */
 	60 * 60,	/* SLEEP */
 };
-#if defined(CONFIG_MACH_GOLDEN_ATT) || defined(CONFIG_MACH_GOLDEN_VZW)
-static struct battery_data_t melius_battery_data[] = {
-	/* SDI battery data (High voltage 4.35V) */
-	{
-		.RCOMP0 = 0x65,
-		.RCOMP_charging = 0x69,
-		.temp_cohot = -850,
-		.temp_cocold = -6750,
-		.is_using_model_data = true,
-		.type_str = "SDI",
-	}
-};
-#else
+
 static struct battery_data_t melius_battery_data[] = {
 	/* SDI battery data (High voltage 4.35V) */
 	{
@@ -516,12 +474,10 @@ static struct battery_data_t melius_battery_data[] = {
 		.type_str = "SDI",
 	}
 };
-#endif
 
 sec_battery_platform_data_t sec_battery_pdata = {
 	/* NO NEED TO BE CHANGED */
 	.initial_check = sec_bat_initial_check,
-	.monitor_additional_check = sec_bat_monitor_additional_check,
 	.bat_gpio_init = sec_bat_gpio_init,
 	.fg_gpio_init = sec_fg_gpio_init,
 	.chg_gpio_init = sec_chg_gpio_init,
@@ -583,14 +539,20 @@ sec_battery_platform_data_t sec_battery_pdata = {
 	.battery_data = (void *)melius_battery_data,
 	.bat_gpio_ta_nconnected = 0,
 	.bat_polarity_ta_nconnected = 0,
-	.bat_irq = MSM_GPIO_TO_INT(GPIO_INOK),
-	.bat_irq_attr = (IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING),
+#if defined(CONFIG_CHARGER_MAX77803)
+	.bat_irq = IF_PMIC_IRQ_BASE + MAX77693_CHG_IRQ_BATP_I,
+	.bat_irq_attr = IRQF_TRIGGER_FALLING,
+#endif
+#if defined(CONFIG_MACH_JF_VZW) || defined(CONFIG_MACH_JF_LGT)
 	.cable_check_type =
 		SEC_BATTERY_CABLE_CHECK_PSY |
-		SEC_BATTERY_CABLE_CHECK_INT,
+		SEC_BATTERY_CABLE_CHECK_NOINCOMPATIBLECHARGE,
+#else
+	.cable_check_type =
+		SEC_BATTERY_CABLE_CHECK_PSY,
+#endif
 	.cable_source_type =
 		SEC_BATTERY_CABLE_SOURCE_EXTERNAL |
-		SEC_BATTERY_CABLE_SOURCE_CALLBACK |
 		SEC_BATTERY_CABLE_SOURCE_EXTENDED,
 
 	.event_check = true,
@@ -662,7 +624,7 @@ sec_battery_platform_data_t sec_battery_pdata = {
 	.chg_polarity_full_check = 1,
 	.full_condition_type = SEC_BATTERY_FULL_CONDITION_SOC |
 		SEC_BATTERY_FULL_CONDITION_NOTIMEFULL |
-		SEC_BATTERY_FULL_CONDITION_VCELL,
+		SEC_BATTERY_RECHARGE_CONDITION_VCELL,
 	.full_condition_soc = 97,
 	.full_condition_vcell = 4300,
 
@@ -699,7 +661,7 @@ sec_battery_platform_data_t sec_battery_pdata = {
 	.chg_polarity_status = 0,
 	.chg_irq = 0,
 	.chg_irq_attr = IRQF_TRIGGER_FALLING,
-	.chg_float_voltage = 4340,
+	.chg_float_voltage = 4350,
 };
 
 static struct platform_device sec_device_battery = {

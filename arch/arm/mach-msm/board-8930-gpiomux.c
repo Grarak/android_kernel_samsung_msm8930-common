@@ -50,7 +50,7 @@ static struct gpiomux_setting gsbi9_active_cfg = {
 };
 
 static struct gpiomux_setting gsbi9_suspended_cfg = {
-	.func = GPIOMUX_FUNC_2,
+	.func = GPIOMUX_FUNC_GPIO,
 	.drv = GPIOMUX_DRV_2MA,
 	.pull = GPIOMUX_PULL_DOWN,
 };
@@ -562,6 +562,7 @@ static struct msm_gpiomux_config msm8960_audio_spkr_configs[] __initdata = {
 		},
 	},
 };
+
 
 static struct msm_gpiomux_config msm8960_audio_auxpcm_configs[] __initdata = {
 	{

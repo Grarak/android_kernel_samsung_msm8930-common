@@ -42,11 +42,7 @@ struct zinitix_ts_platform_data {
 };
 extern struct class *sec_class;
 extern int touch_is_pressed;
-#ifdef CONFIG_MACH_LT02
-extern unsigned int system_rev;
-#else
 extern int system_rev;
-#endif
 
 extern int poweroff_charging;
 /*

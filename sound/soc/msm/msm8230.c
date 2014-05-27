@@ -139,9 +139,6 @@ static int msm8930_ext_spk_pamp;
 #if defined(CONFIG_DOCK_EN)
 static int msm8930_dock_pamp;
 #endif /* CONFIG_DOCK_EN */
-#if defined(CONFIG_MACH_KS02) || defined(CONFIG_MACH_SERRANO_KOR_LTE)
-static int main_mic_bias_on;
-#endif
 static struct clk *rx_osr_clk;
 static struct clk *rx_bit_clk;
 static struct clk *tx_osr_clk;
@@ -207,18 +204,13 @@ static struct ext_amp_work ext_amp_dwork;
 static void external_speaker_amp_work(struct work_struct *work)
 {
 	pr_debug("%s :: Ext Speaker Amp enable\n", __func__);
-	
-	if (msm8930_ext_spk_pamp == 0)
-		pr_debug("%s :: Ext Speaker Amp enable but msm8930_ext_spk_pamp is already 0\n", __func__);
-	else {
 #ifdef CONFIG_EXT_SPK_AMP
-		gpio_direction_output(GPIO_SPK_AMP_EN, 1);
+	gpio_direction_output(GPIO_SPK_AMP_EN, 1);
 #else
-		pm8xxx_spk_enable(MSM8930_SPK_ON);
+	pm8xxx_spk_enable(MSM8930_SPK_ON);
 #endif
-		pr_debug("4 ms after turning on external Amp\n");
-		usleep_range(4000, 4000);
-	}
+	pr_debug("4 ms after turning on external Amp\n");
+	usleep_range(4000, 4000);
 }
 #if defined (CONFIG_WCD9304_CLK_9600)
 static struct device mi2s_dev = {
@@ -301,12 +293,8 @@ static void msm8930_ext_spk_power_amp_on(u32 spk)
 {
 	if (spk & (SPK_AMP_POS | SPK_AMP_NEG)) {
 
-#if defined (CONFIG_MACH_LT02)
-		if (msm8930_ext_spk_pamp & SPK_AMP_POS) {
-#else
-		if ((msm8930_ext_spk_pamp & SPK_AMP_POS)&&
+		if ((msm8930_ext_spk_pamp & SPK_AMP_POS) &&
 			(msm8930_ext_spk_pamp & SPK_AMP_NEG)) {
-#endif
 
 			pr_debug("%s Speaker Amp already turned on. spk = 0x%08x\n",
 					__func__, spk);
@@ -314,12 +302,9 @@ static void msm8930_ext_spk_power_amp_on(u32 spk)
 		}
 
 		msm8930_ext_spk_pamp |= spk;
-#if defined (CONFIG_MACH_LT02)
-		if (msm8930_ext_spk_pamp & SPK_AMP_POS) {
-#else
+
 		if ((msm8930_ext_spk_pamp & SPK_AMP_POS) &&
 			(msm8930_ext_spk_pamp & SPK_AMP_NEG)) {
-#endif
 			/* Delaying the amp power_on to remove the static noise
 			during SPK_PA enable */
 			schedule_delayed_work(
@@ -366,10 +351,8 @@ static int msm8930_spkramp_event(struct snd_soc_dapm_widget *w,
 	if (SND_SOC_DAPM_EVENT_ON(event)) {
 		if (!strncmp(w->name, "Ext Spk Left Pos", 17))
 			msm8930_ext_spk_power_amp_on(SPK_AMP_POS);
-#ifndef CONFIG_MACH_LT02
 		else if (!strncmp(w->name, "Ext Spk Left Neg", 17))
 			msm8930_ext_spk_power_amp_on(SPK_AMP_NEG);
-#endif
 		else {
 			pr_err("%s() Invalid Speaker Widget = %s\n",
 					__func__, w->name);
@@ -378,10 +361,8 @@ static int msm8930_spkramp_event(struct snd_soc_dapm_widget *w,
 	} else {
 		if (!strncmp(w->name, "Ext Spk Left Pos", 17))
 			msm8930_ext_spk_power_amp_off(SPK_AMP_POS);
-#ifndef CONFIG_MACH_LT02
 		else if (!strncmp(w->name, "Ext Spk Left Neg", 17))
 			msm8930_ext_spk_power_amp_off(SPK_AMP_NEG);
-#endif
 		else {
 			pr_err("%s() Invalid Speaker Widget = %s\n",
 					__func__, w->name);
@@ -526,16 +507,9 @@ static int msm8930_sub_micbias_event(struct snd_soc_dapm_widget *w,
 	pr_info("%s\n", __func__);
 	gpio_direction_output(GPIO_SUB_MIC_BIAS_EN,
 				SND_SOC_DAPM_EVENT_ON(event));
-
-#if defined(CONFIG_MACH_KS02) || defined(CONFIG_MACH_SERRANO_KOR_LTE)
-	if(main_mic_bias_on && SND_SOC_DAPM_EVENT_ON(event))
-		usleep_range(300000, 300000);
-#endif
-
 	return 0;
 }
 #endif
-
 #ifdef CONFIG_EXT_MAINMIC_BIAS
 static int msm8930_main_micbias_event(struct snd_soc_dapm_widget *w,
 		struct snd_kcontrol *k, int event)
@@ -546,24 +520,18 @@ static int msm8930_main_micbias_event(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 #endif /* CONFIG_EXT_MAINMIC_BIAS */
-
-#if defined(CONFIG_MACH_KS02) || defined(CONFIG_MACH_SERRANO_KOR_LTE)
-static int msm8930_main_micbias_notifier(struct snd_soc_dapm_widget *w,
-		struct snd_kcontrol *k, int event)
-{
-	main_mic_bias_on = SND_SOC_DAPM_EVENT_ON(event);
-	pr_info("%s : main_mic_bias_on=%d\n", __func__, main_mic_bias_on);
-	return 0;
-}
-#endif
-
-#if defined(CONFIG_EXT_EARMIC_BIAS)
+#if defined(CONFIG_EXT_EARMIC_BIAS) || defined(CONFIG_MACH_KS02)
 static int msm8930_ear_micbias_event(struct snd_soc_dapm_widget *w,
 		struct snd_kcontrol *k, int event)
 {
 	pr_info("%s\n", __func__);
-	gpio_direction_output(GPIO_EAR_MIC_BIAS_EN,
+#if defined(CONFIG_MACH_KS02)
+	if(system_rev < BOARD_REV04)
+#endif
+	{
+		gpio_direction_output(GPIO_EAR_MIC_BIAS_EN,
 				SND_SOC_DAPM_EVENT_ON(event));
+	}
 	return 0;
 }
 #endif
@@ -658,12 +626,9 @@ static const struct snd_soc_dapm_widget msm8930_dapm_widgets[] = {
 
 	SND_SOC_DAPM_SUPPLY("MCLK",  SND_SOC_NOPM, 0, 0,
 	msm8930_mclk_event, SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
-#if defined (CONFIG_MACH_LT02)
-	SND_SOC_DAPM_SPK("Ext Spk Left Pos", msm8930_spkramp_event),
-#else
+
 	SND_SOC_DAPM_SPK("Ext Spk Left Pos", msm8930_spkramp_event),
 	SND_SOC_DAPM_SPK("Ext Spk Left Neg", msm8930_spkramp_event),
-#endif
 #if defined(CONFIG_DOCK_EN)
 	SND_SOC_DAPM_SPK("Dock Left Pos", msm8930_dock_event),
 #if defined (CONFIG_MACH_LT02)
@@ -678,14 +643,10 @@ static const struct snd_soc_dapm_widget msm8930_dapm_widgets[] = {
 #ifdef CONFIG_EXT_MAINMIC_BIAS
 	SND_SOC_DAPM_MIC("Handset Mic", msm8930_main_micbias_event),
 #else
-#if defined(CONFIG_MACH_KS02) || defined(CONFIG_MACH_SERRANO_KOR_LTE)
-	SND_SOC_DAPM_MIC("Handset Mic", msm8930_main_micbias_notifier),
-#else
 	SND_SOC_DAPM_MIC("Handset Mic", NULL),
-#endif
 #endif /* CONFIG_EXT_MAINMIC_BIAS*/
 
-#if defined(CONFIG_EXT_EARMIC_BIAS)
+#if defined(CONFIG_EXT_EARMIC_BIAS) || defined(CONFIG_MACH_KS02)
 	SND_SOC_DAPM_MIC("Headset Mic", msm8930_ear_micbias_event),
 #else
 	SND_SOC_DAPM_MIC("Headset Mic", NULL),
@@ -707,12 +668,8 @@ static const struct snd_soc_dapm_route common_audio_map[] = {
 	{"SPK DAC", NULL, "MCLK"},
 	{"LDO_H", NULL, "MCLK"},
 	/* Speaker path */
-#if defined (CONFIG_MACH_LT02)
-	{"Ext Spk Left Pos", NULL, "RDAC5 MUX"},
-#else
 	{"Ext Spk Left Pos", NULL, "LINEOUT1"},
 	{"Ext Spk Left Neg", NULL, "LINEOUT2"},
-#endif
 #if defined(CONFIG_DOCK_EN)
 #if defined (CONFIG_MACH_LT02)
 	{"Dock Left Pos", NULL, "HPHL"},
@@ -738,13 +695,8 @@ static const struct snd_soc_dapm_route common_audio_map[] = {
 	{"AMIC1", NULL, "Main Mic Bias"},
 	{"Main Mic Bias", NULL, "Handset Mic"},
 #else
-#ifdef CONFIG_MACH_LT02_SEA
-	{"AMIC1", NULL, "MIC BIAS3 External"},
-	{"MIC BIAS3 External", NULL, "Handset Mic"},
-#else
 	{"AMIC1", NULL, "MIC BIAS1 External"},
 	{"MIC BIAS1 External", NULL, "Handset Mic"},
-#endif
 #endif
 #ifdef CONFIG_EXT_SUBMIC_BIAS
 	{"AMIC3", NULL, "Sub Mic Bias"},
@@ -1327,14 +1279,14 @@ static int msm8930_i2s_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	err = snd_soc_jack_new(codec, "Headset Jack",
 		SND_JACK_HEADSET, &hs_jack);
 	if (err) {
-		pr_info("failed to create new jack\n");
+		pr_debug("failed to create new jack\n");
 		return err;
 	}
 
 	err = snd_soc_jack_new(codec, "Button Jack",
 				SND_JACK_BTN_0, &button_jack);
 	if (err) {
-		pr_info("failed to create new jack\n");
+		pr_debug("failed to create new jack\n");
 		return err;
 	}
 #if defined (CONFIG_WCD9304_CLK_9600)
@@ -1433,21 +1385,10 @@ static int msm8930_hdmi_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	struct snd_interval *channels = hw_param_interval(params,
 					SNDRV_PCM_HW_PARAM_CHANNELS);
 
-#ifdef CONFIG_MACH_KS02
-	if (channels->max < 2)
-		channels->min = channels->max = 2;
-
-	rate->min = rate->max = 48000;
-
-	if (channels->min != channels->max)
-		channels->min = channels->max;
-#else
 	rate->min = rate->max = 48000;
 	channels->min = channels->max = msm_hdmi_rx_ch;
-
 	if (channels->max < 2)
-		channels->min = channels->max = 2;
-#endif
+	channels->min = channels->max = 2;
 
 	return 0;
 }
@@ -2506,7 +2447,7 @@ static struct  sec_audio_gpio msm8930_audio_gpio_table[] = {
 	},
 #endif /* CONFIG_EXT_MAINMIC_BIAS */
 
-#if defined(CONFIG_EXT_EARMIC_BIAS)
+#if defined(CONFIG_EXT_EARMIC_BIAS) || defined(CONFIG_MACH_KS02)
 	{
 		.gpio = GPIO_EAR_MIC_BIAS_EN,
 		.name = "Ear mic bias",

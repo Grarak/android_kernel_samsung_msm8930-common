@@ -55,28 +55,7 @@ static void get_3axis_sensordata(char *pchRcvDataFrame, int *iDataIdx,
 	iTemp += pchRcvDataFrame[(*iDataIdx)++];
 	sensorsdata->z = (s16)iTemp;
 }
-#if defined(CONFIG_SENSORS_SSP_GP2AP030A00F)
-static void get_light_sensordata(char *pchRcvDataFrame, int *iDataIdx,
-	struct sensor_value *sensorsdata)
-{
-	int iTemp;
 
-	iTemp = (int)pchRcvDataFrame[(*iDataIdx)++];
-	iTemp <<= 8;
-	iTemp += pchRcvDataFrame[(*iDataIdx)++];
-	sensorsdata->data_als0 = (u16)iTemp;
-
-	iTemp = (int)pchRcvDataFrame[(*iDataIdx)++];
-	iTemp <<= 8;
-	iTemp += pchRcvDataFrame[(*iDataIdx)++];
-	sensorsdata->data_als1 = (u16)iTemp;
-
-	iTemp = (int)pchRcvDataFrame[(*iDataIdx)++];
-	iTemp <<= 8;
-	iTemp += pchRcvDataFrame[(*iDataIdx)++];
-	sensorsdata->lux_mode = (u16)iTemp;
-}
-#else
 static void get_light_sensordata(char *pchRcvDataFrame, int *iDataIdx,
 	struct sensor_value *sensorsdata)
 {
@@ -102,7 +81,6 @@ static void get_light_sensordata(char *pchRcvDataFrame, int *iDataIdx,
 	iTemp += pchRcvDataFrame[(*iDataIdx)++];
 	sensorsdata->w = (u16)iTemp;
 }
-#endif
 
 static void get_pressure_sensordata(char *pchRcvDataFrame, int *iDataIdx,
 	struct sensor_value *sensorsdata)
@@ -129,28 +107,14 @@ static void get_pressure_sensordata(char *pchRcvDataFrame, int *iDataIdx,
 static void get_proximity_sensordata(char *pchRcvDataFrame, int *iDataIdx,
 	struct sensor_value *sensorsdata)
 {
-	int iTemp;
-
-	iTemp = (int)pchRcvDataFrame[(*iDataIdx)++];
-	iTemp <<= 8;
-	iTemp += pchRcvDataFrame[(*iDataIdx)++];
-	sensorsdata->prox[0] = (u16)iTemp;
-	
-	iTemp = (int)pchRcvDataFrame[(*iDataIdx)++];
-	iTemp <<= 8;
-	iTemp += pchRcvDataFrame[(*iDataIdx)++];
-	sensorsdata->prox[1] = (u16)iTemp;
+	sensorsdata->prox[0] = (u8)pchRcvDataFrame[(*iDataIdx)++];
+	sensorsdata->prox[1] = (u8)pchRcvDataFrame[(*iDataIdx)++];
 }
 
 static void get_proximity_rawdata(char *pchRcvDataFrame, int *iDataIdx,
 	struct sensor_value *sensorsdata)
 {
-	int iTemp;
-
-	iTemp = (int)pchRcvDataFrame[(*iDataIdx)++];
-	iTemp <<= 8;
-	iTemp += pchRcvDataFrame[(*iDataIdx)++];
-	sensorsdata->prox[0] = (u16)iTemp;
+	sensorsdata->prox[0] = (u8)pchRcvDataFrame[(*iDataIdx)++];
 }
 
 static void get_geomagnetic_rawdata(char *pchRcvDataFrame, int *iDataIdx,
