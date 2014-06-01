@@ -46,9 +46,18 @@ if [ "$kernelversion" == "y" ]; then
 fi
 ###########################################################################
 
+echo -e "> 1. Normal"
+echo -e "  2. Korean"
+read variant
+
 make melius_defconfig VARIANT_DEFCONFIG=msm8930_melius_eur_lte_defconfig SELINUX_DEFCONFIG=selinux_defconfig
 echo -e "${bldcya}Build kernel ${txtrst}"
-cp arch/arm/configs/gk_melius_defconfig .config
+if [ $variant != 2 ]; then
+	cp arch/arm/configs/gk_melius_defconfig .config
+else
+	version=${version}-Korean-Edition-KTT
+	cp arch/arm/configs/gk_meliusktt_defconfig .config
+fi
 sed -i s/CONFIG_LOCALVERSION=\".*\"/CONFIG_LOCALVERSION=\"-GraKernel_${version}\"/ .config
 
 ###########################################################################
