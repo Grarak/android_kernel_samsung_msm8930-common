@@ -32,11 +32,14 @@
 #include <linux/i2c/mxt224s.h>
 #endif
 #ifdef CONFIG_TOUCHSCREEN_MXTS
-#include <linux/i2c/mxts.h>
+#include <linux/i2c/mxts_msm8930.h>
 #endif
 
 #define MSM_8930_GSBI3_QUP_I2C_BUS_ID	3
 
+#define GPIO_TOUCH_IRQ		11
+#define GPIO_TOUCH_SDA		16
+#define GPIO_TOUCH_SCL		17
 
 #ifdef CONFIG_TOUCHSCREEN_MXT224E
 static void mxt224_power_onoff(int onoff)
@@ -662,7 +665,7 @@ static void mxts_power_onoff(int onoff)
 		}
 	}
 
-	if (onoff) {
+	if (onoff) {		
 		if (!regulator_is_enabled(reg_lvs6)) {
 			ret = regulator_enable(reg_lvs6);
 			if (ret) {

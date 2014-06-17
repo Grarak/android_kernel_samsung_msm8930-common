@@ -39,7 +39,7 @@
 	||defined(CONFIG_MACH_SERRANO_VZW) ||defined(CONFIG_MACH_SERRANO_TMO) ||defined(CONFIG_MACH_SERRANO_ATT)
 #define TC360_FW_NAME		"tc360_serrano_usa"
 #define SUPPORT_MODULE_VER	0x4
-#elif defined(CONFIG_MACH_SERRANO_EUR_3G) || defined(CONFIG_MACH_SERRANO_EUR_LTE)
+#elif defined(CONFIG_MACH_SERRANO_EUR_3G) || defined(CONFIG_MACH_SERRANO_EUR_LTE) || defined(CONFIG_MACH_SERRANO_KOR_LTE)
 #define TC360_FW_NAME		"tc360_serrano_eur"
 #define SUPPORT_MODULE_VER	0x5
 #else
@@ -197,11 +197,11 @@ static irqreturn_t tc360_interrupt(int irq, void *dev_id)
 	case 1 ... 2:
 		press = !(key_val & TC360_KEY_PRESS_MASK);
 
-#if 0
+#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 		dev_info(&client->dev, "key[%3d] is %s\n",
 			data->keycodes[key_index - 1],
 			(press) ? "pressed" : "releaseed");
-//#else
+#else
 		dev_info(&client->dev, "key is %s\n",
 			(press) ? "pressed" : "releaseed");
 #endif
@@ -1687,7 +1687,7 @@ static int __devinit tc360_probe(struct i2c_client *client,
 	dev_info(&client->dev, "number of keys= %d\n", data->num_key);
 
 	data->keycodes = data->pdata->keycodes;
-#if 0
+#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 	for (i = 0; i < data->num_key; i++)
 		dev_info(&client->dev, "keycode[%d]= %3d\n", i,
 			data->keycodes[i]);
@@ -1907,6 +1907,12 @@ static int tc360_suspend(struct device *dev)
 	data->pdata->led_power(false);
 	if (data->suspend_type == TC360_SUSPEND_WITH_POWER_OFF) {
 		data->pdata->power(false);
+
+	#if defined(CONFIG_MACH_GOLDEN)
+		gpio_tlmm_config(GPIO_CFG(102, 0,
+			GPIO_CFG_INPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), 1);
+	#endif
+		
 	} else if (data->suspend_type == TC360_SUSPEND_WITH_SLEEP_CMD) {
 		ret = i2c_smbus_write_byte_data(client, TC360_CMD,
 						TC360_CMD_SLEEP);
@@ -1949,6 +1955,12 @@ static int tc360_resume(struct device *dev)
 	}
 
 	if (data->suspend_type == TC360_SUSPEND_WITH_POWER_OFF) {
+
+	#if defined(CONFIG_MACH_GOLDEN)
+		gpio_tlmm_config(GPIO_CFG(102, 0,
+			GPIO_CFG_INPUT, GPIO_CFG_PULL_UP, GPIO_CFG_2MA), 1);
+	#endif
+	
 		data->pdata->power(true);
 		msleep(TC360_POWERON_DELAY);
 	} else if (data->suspend_type == TC360_SUSPEND_WITH_SLEEP_CMD) {

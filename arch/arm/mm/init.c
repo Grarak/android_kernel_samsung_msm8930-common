@@ -227,7 +227,7 @@ EXPORT_SYMBOL(arm_dma_zone_size);
  * allocations.  This must be the smallest DMA mask in the system,
  * so a successful GFP_DMA allocation will always satisfy this.
  */
-phys_addr_t arm_dma_limit;
+u32 arm_dma_limit;
 
 static void __init arm_adjust_dma_zone(unsigned long *size, unsigned long *hole,
 	unsigned long dma_size)
@@ -364,7 +364,7 @@ phys_addr_t __init arm_memblock_steal(phys_addr_t size, phys_addr_t align)
 
 	BUG_ON(!arm_memblock_steal_permitted);
 
-	phys = memblock_alloc_base(size, align, MEMBLOCK_ALLOC_ANYWHERE);
+	phys = memblock_alloc(size, align);
 	memblock_free(phys, size);
 	memblock_remove(phys, size);
 
@@ -852,14 +852,6 @@ void free_initmem(void)
 				    "TCM link");
 #endif
 
-#ifdef CONFIG_STRICT_MEMORY_RWX
-	poison_init_mem((char *)__arch_info_begin,
-		__init_end - (char *)__arch_info_begin);
-	reclaimed_initmem = free_area(__phys_to_pfn(__pa(__arch_info_begin)),
-				    __phys_to_pfn(__pa(__init_end)),
-				    "init");
-	totalram_pages += reclaimed_initmem;
-#else
 	poison_init_mem(__init_begin, __init_end - __init_begin);
 	if (!machine_is_integrator() && !machine_is_cintegrator()) {
 		reclaimed_initmem = free_area(__phys_to_pfn(__pa(__init_begin)),
@@ -867,7 +859,6 @@ void free_initmem(void)
 					    "init");
 		totalram_pages += reclaimed_initmem;
 	}
-#endif
 }
 
 #ifdef CONFIG_BLK_DEV_INITRD

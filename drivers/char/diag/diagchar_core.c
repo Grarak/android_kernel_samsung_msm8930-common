@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -47,7 +47,6 @@ MODULE_DESCRIPTION("Diag Char Driver");
 MODULE_LICENSE("GPL v2");
 MODULE_VERSION("1.0");
 
-#define MIN_SIZ_ALLOW 4
 #define INIT	1
 #define EXIT	-1
 struct diagchar_dev *driver;
@@ -462,7 +461,7 @@ int diag_copy_remote(char __user *buf, size_t count, int *pret, int *pnum_data)
 					i, (unsigned int)hsic_buf_tbl[i].buf,
 					hsic_buf_tbl[i].length);
 				num_data++;
-
+#ifndef CONFIG_DIAGFWD_REMOTE_PROC_TEMP
 				/* Copy the negative token */
 				if (copy_to_user(buf+ret,
 					&remote_token, 4)) {
@@ -470,7 +469,7 @@ int diag_copy_remote(char __user *buf, size_t count, int *pret, int *pnum_data)
 						goto drop_hsic;
 				}
 				ret += 4;
-
+#endif
 				/* Copy the length of data being passed */
 				if (copy_to_user(buf+ret,
 					(void *)&(hsic_buf_tbl[i].length),
@@ -853,7 +852,16 @@ int diag_switch_logging(unsigned long ioarg)
 		diag_clear_hsic_tbl();
 		driver->mask_check = 0;
 		driver->logging_mode = MEMORY_DEVICE_MODE;
-	}
+
+		/*  sub_logging_mode is for MDM, 
+		 *  the other is for MSM8960/MSM8930 */
+#if defined(CONFIG_MACH_JF)
+		driver->sub_logging_mode = UART_MODE;
+#else
+		driver->sub_logging_mode = NO_LOGGING_MODE;
+#endif
+	} else
+		driver->sub_logging_mode = NO_LOGGING_MODE;
 
 	driver->logging_process_id = current->tgid;
 	mutex_unlock(&driver->diagchar_mutex);
@@ -977,8 +985,6 @@ long diagchar_ioctl(struct file *filp,
 		for (i = 0; i < MAX_DCI_CLIENTS; i++) {
 			if (driver->dci_client_tbl[i].client == NULL) {
 				driver->dci_client_tbl[i].client = current;
-				driver->dci_client_tbl[i].client_id =
-							driver->dci_client_id;
 				driver->dci_client_tbl[i].list =
 							 dci_params->list;
 				driver->dci_client_tbl[i].signal_type =
@@ -1059,7 +1065,7 @@ long diagchar_ioctl(struct file *filp,
 				 sizeof(struct diag_dci_health_stats)))
 			return -EFAULT;
 		mutex_lock(&dci_health_mutex);
-		i = diag_dci_find_client_index_health(stats.client_id);
+		i = diag_dci_find_client_index(current->tgid);
 		if (i != DCI_CLIENT_INDEX_INVALID) {
 			dci_params = &(driver->dci_client_tbl[i]);
 			stats.dropped_logs = dci_params->dropped_logs;
@@ -1394,10 +1400,6 @@ static int diagchar_write(struct file *file, const char __user *buf,
 	index = 0;
 	/* Get the packet type F3/log/event/Pkt response */
 	err = copy_from_user((&pkt_type), buf, 4);
-	if (err) {
-		pr_alert("diag: copy failed for pkt_type\n");
-		return -EAGAIN;
-	}
 	/* First 4 bytes indicate the type of payload - ignore these */
 	if (count < 4) {
 		pr_err("diag: Client sending short data\n");
@@ -1415,7 +1417,7 @@ static int diagchar_write(struct file *file, const char __user *buf,
 				&& (!driver->usb_connected)) ||
 				(driver->logging_mode == NO_LOGGING_MODE)) {
 		/*Drop the diag payload */
-		pr_debug("diag: Dropping packet, usb is not connected in usb mode and non-dci data type\n");
+		pr_err_ratelimited("diag: Dropping packet, usb is not connected in usb mode and non-dci data type\n");
 		return -EIO;
 	}
 #endif /* DIAG over USB */
@@ -1438,9 +1440,8 @@ static int diagchar_write(struct file *file, const char __user *buf,
 		return err;
 	}
 	if (pkt_type == CALLBACK_DATA_TYPE) {
-		if (payload_size > itemsize ||
-				payload_size <= MIN_SIZ_ALLOW) {
-			pr_err("diag: Dropping packet, invalid packet size. Current payload size %d\n",
+		if (payload_size > itemsize) {
+			pr_err("diag: Dropping packet, packet payload size crosses 4KB limit. Current payload size %d\n",
 				payload_size);
 			driver->dropped_count++;
 			return -EBADMSG;
@@ -1459,6 +1460,7 @@ static int diagchar_write(struct file *file, const char __user *buf,
 			return -EIO;
 		}
 		/* Check for proc_type */
+
 		remote_proc = diag_get_remote(*(int *)buf_copy);
 
 		if (!remote_proc) {
@@ -1582,19 +1584,17 @@ static int diagchar_write(struct file *file, const char __user *buf,
 			return -EIO;
 		}
 		/* Check for proc_type */
+#ifndef CONFIG_DIAGFWD_REMOTE_PROC_TEMP
 		remote_proc = diag_get_remote(*(int *)user_space_data);
 
 		if (remote_proc) {
-			if (payload_size <= MIN_SIZ_ALLOW) {
-				pr_err("diag: Integer underflow in %s, payload size: %d",
-							__func__, payload_size);
-				return -EBADMSG;
-			}
 			token_offset = 4;
 			payload_size -= 4;
 			buf += 4;
 		}
-
+#else
+		remote_proc = MDM;
+#endif
 		/* Check masks for On-Device logging */
 		if (driver->mask_check) {
 			if (!mask_request_validate(user_space_data +
@@ -1606,6 +1606,11 @@ static int diagchar_write(struct file *file, const char __user *buf,
 			}
 		}
 		buf = buf + 4;
+
+		/* To removed "0x7E", when received only "0x7E" */
+		if (0x7e == *(((unsigned char *)buf)))
+			return 0;
+
 #ifdef DIAG_DEBUG
 		pr_debug("diag: user space data %d\n", payload_size);
 		for (i = 0; i < payload_size; i++)
@@ -1684,10 +1689,12 @@ static int diagchar_write(struct file *file, const char __user *buf,
 			}
 		}
 #endif
+#if !defined(CONFIG_MACH_JF)
 		/* send masks to 8k now */
 		if (!remote_proc)
 			diag_process_hdlc((void *)
 				(user_space_data + token_offset), payload_size);
+#endif
 		diagmem_free(driver, user_space_data, POOL_TYPE_USER);
 		return 0;
 	}
@@ -2083,7 +2090,7 @@ static int __init diagchar_init(void)
 			goto fail;
 	} else {
 		printk(KERN_INFO "kzalloc failed\n");
-		goto fail;
+		goto fail2;
 	}
 
 	pr_info("diagchar initialized now");
@@ -2098,6 +2105,8 @@ fail:
 	diag_masks_exit();
 	diag_sdio_fn(EXIT);
 	diagfwd_bridge_fn(EXIT);
+	kfree(driver);
+fail2:
 	return -1;
 }
 

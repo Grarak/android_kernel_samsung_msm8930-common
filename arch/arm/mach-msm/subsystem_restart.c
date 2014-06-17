@@ -34,10 +34,10 @@
 #include <mach/socinfo.h>
 #include <mach/subsystem_notif.h>
 #include <mach/subsystem_restart.h>
-
 #ifdef CONFIG_SEC_DEBUG
 #include <mach/sec_debug.h>
 #endif
+
 #include "smd_private.h"
 
 struct subsys_soc_restart_order {
@@ -117,6 +117,21 @@ DEFINE_SINGLE_RESTART_ORDER(orders_8x60_all, _order_8x60_all);
 static const char * const _order_8x60_modems[] = {"external_modem", "modem"};
 DEFINE_SINGLE_RESTART_ORDER(orders_8x60_modems, _order_8x60_modems);
 
+#ifndef CONFIG_MACH_JF
+/* MSM 8960 restart ordering info */
+static const char * const order_8960[] = {"modem", "lpass"};
+
+
+static struct subsys_soc_restart_order restart_orders_8960_one = {
+	.subsystem_list = order_8960,
+	.count = ARRAY_SIZE(order_8960),
+	.subsys_ptrs = {[ARRAY_SIZE(order_8960)] = NULL}
+	};
+
+static struct subsys_soc_restart_order *restart_orders_8960[] = {
+	&restart_orders_8960_one,
+};
+#endif
 /*SGLTE restart ordering info*/
 static const char * const order_8960_sglte[] = {"external_modem",
 						"modem"};
@@ -129,6 +144,20 @@ static struct subsys_soc_restart_order restart_orders_8960_fusion_sglte = {
 
 static struct subsys_soc_restart_order *restart_orders_8960_sglte[] = {
 	&restart_orders_8960_fusion_sglte,
+	};
+
+/* SGLTE2 restart ordering info*/
+static const char * const order_8064_sglte2[] = {"external_modem",
+						"external_modem_mdm"};
+
+static struct subsys_soc_restart_order restart_orders_8064_fusion_sglte2 = {
+	.subsystem_list = order_8064_sglte2,
+	.count = ARRAY_SIZE(order_8064_sglte2),
+	.subsys_ptrs = {[ARRAY_SIZE(order_8064_sglte2)] = NULL}
+	};
+
+static struct subsys_soc_restart_order *restart_orders_8064_sglte2[] = {
+	&restart_orders_8064_fusion_sglte2,
 	};
 
 /* These will be assigned to one of the sets above after
@@ -149,6 +178,7 @@ static int restart_level_set(const char *val, struct kernel_param *kp)
 {
 	int ret;
 	int old_val = restart_level;
+	int subtype;
 
 	if (cpu_is_msm9615()) {
 		pr_err("Only Phase 1 subsystem restart is supported\n");
@@ -161,7 +191,9 @@ static int restart_level_set(const char *val, struct kernel_param *kp)
 
 	switch (restart_level) {
 	case RESET_SUBSYS_INDEPENDENT:
-		if (socinfo_get_platform_subtype() == PLATFORM_SUBTYPE_SGLTE) {
+		subtype = socinfo_get_platform_subtype();
+		if ((subtype == PLATFORM_SUBTYPE_SGLTE) ||
+			(subtype == PLATFORM_SUBTYPE_SGLTE2)) {
 			pr_info("Phase 3 is currently unsupported. Using phase 2 instead.\n");
 			restart_level = RESET_SUBSYS_COUPLED;
 		}
@@ -448,8 +480,24 @@ static void __subsystem_restart_dev(struct subsys_device *dev)
 	const char *name = dev->desc->name;
 	unsigned long flags;
 
-	pr_debug("Restarting %s [level=%d]!\n", desc->name, restart_level);
+#if !defined(CONFIG_MACH_JF) && defined(CONFIG_SEC_DEBUG)
+#ifdef CONFIG_SEC_SSR_DEBUG_LEVEL_CHK
+	if (!sec_debug_is_enabled_for_ssr())
+#else
+	if (!sec_debug_is_enabled())
+#endif
+	{
+		restart_level = RESET_SUBSYS_INDEPENDENT;
+#ifdef CONFIG_SEC_SSR_DUMP
+		enable_ramdumps = 1;
+#endif
+	}else
+		restart_level = RESET_SOC;
 
+	if (strcmp(name, "riva") == 0)
+		restart_level = RESET_SUBSYS_INDEPENDENT;
+#endif
+	pr_debug("Restarting %s [level=%d]!\n", desc->name, restart_level);
 	/*
 	 * We want to allow drivers to call subsystem_restart{_dev}() as many
 	 * times as they want up until the point where the subsystem is
@@ -473,20 +521,6 @@ int subsystem_restart_dev(struct subsys_device *dev)
 {
 	const char *name = dev->desc->name;
 
-#ifdef CONFIG_SEC_DEBUG
-#ifdef CONFIG_SEC_SSR_DEBUG_LEVEL_CHK
-	if (!sec_debug_is_enabled_for_ssr())
-#else
-	if (!sec_debug_is_enabled())
-#endif
-		restart_level = RESET_SUBSYS_INDEPENDENT;
-	else
-		restart_level = RESET_SOC;
-#endif
-
-	if (strcmp(dev->desc->name, "wcnss") == 0)
-		restart_level = RESET_SUBSYS_INDEPENDENT;
-
 	/*
 	 * If a system reboot/shutdown is underway, ignore subsystem errors.
 	 * However, print a message so that we know that a subsystem behaved
@@ -498,21 +532,32 @@ int subsystem_restart_dev(struct subsys_device *dev)
 		return -EBUSY;
 	}
 
-
 	pr_info("Restart sequence requested for %s, restart_level = %d.\n",
 		name, restart_level);
 
 	switch (restart_level) {
-
+#ifdef CONFIG_SEC_DEBUG_MDM_FILE_INFO
+	case RESET_SUBSYS_INDEPENDENT_SOC:
+		enable_ramdumps = sec_debug_is_enabled()? 1 : 0;
+		/* Fall through */
+#endif
 	case RESET_SUBSYS_COUPLED:
 	case RESET_SUBSYS_INDEPENDENT:
 		__subsystem_restart_dev(dev);
 		break;
 	case RESET_SOC:
-		panic("subsys-restart: Resetting the SoC - %s crashed.", name);
+		WARN(1, "subsys-restart: Resetting the SoC - %s crashed.", name);
+/* It should be used for APQ model to distingush AP side or MDM side */
+#ifdef CONFIG_SEC_DEBUG
+		panic("%s crashed: subsys-restart: Resetting the SoC",
+			name);
+#else
+		panic("subsys-restart: Resetting the SoC - %s crashed.",
+			name);
+#endif
 		break;
 	default:
-		panic("subsys-restart: Unknown restart level!\n");
+		pr_err("subsys-restart: Unknown restart level!\n");
 		break;
 	}
 
@@ -593,17 +638,6 @@ static struct notifier_block panic_nb = {
 	.notifier_call  = ssr_panic_handler,
 };
 
-#ifdef CONFIG_SEC_DEBUG
-int ssr_panic_handler_for_sec_dbg(void)
-{
-	struct subsys_device *dev;
-
-	list_for_each_entry(dev, &subsystem_list, list)
-		if (dev->desc->crash_shutdown)
-			dev->desc->crash_shutdown(dev->desc);
-	return NOTIFY_DONE;
-}
-#endif
 static int __init ssr_init_soc_restart_orders(void)
 {
 	int i;
@@ -625,10 +659,20 @@ static int __init ssr_init_soc_restart_orders(void)
 		restart_orders = orders_8x60_all;
 		n_restart_orders = ARRAY_SIZE(orders_8x60_all);
 	}
-
+#ifndef CONFIG_MACH_JF
+	if (cpu_is_msm8960() || cpu_is_msm8930()) {
+		restart_orders = restart_orders_8960;
+		n_restart_orders = ARRAY_SIZE(restart_orders_8960);
+	}
+#endif
 	if (socinfo_get_platform_subtype() == PLATFORM_SUBTYPE_SGLTE) {
 		restart_orders = restart_orders_8960_sglte;
 		n_restart_orders = ARRAY_SIZE(restart_orders_8960_sglte);
+	}
+
+	if (socinfo_get_platform_subtype() == PLATFORM_SUBTYPE_SGLTE2) {
+		restart_orders = restart_orders_8064_sglte2;
+		n_restart_orders = ARRAY_SIZE(restart_orders_8064_sglte2);
 	}
 
 	for (i = 0; i < n_restart_orders; i++) {
@@ -645,17 +689,28 @@ static int __init ssr_init_soc_restart_orders(void)
 
 static int __init subsys_restart_init(void)
 {
-#ifdef CONFIG_SEC_DEBUG
+#ifdef CONFIG_SEC_DEBUG_MDM_FILE_INFO
+	restart_level = RESET_SUBSYS_INDEPENDENT_SOC;
+#else
+	restart_level = RESET_SOC;
+#endif
+
+#if !defined(CONFIG_MACH_JF) && defined(CONFIG_SEC_DEBUG)
 #ifdef CONFIG_SEC_SSR_DEBUG_LEVEL_CHK
 	if (!sec_debug_is_enabled_for_ssr())
 #else
 	if (!sec_debug_is_enabled())
 #endif
+	{
 		restart_level = RESET_SUBSYS_INDEPENDENT;
-	else
-		restart_level = RESET_SOC;
+#ifdef CONFIG_SEC_SSR_DUMP
+		enable_ramdumps = 1;
 #endif
-	restart_level = RESET_SOC;
+		pr_info("%s: enable_ramdumps[%d]", __func__, enable_ramdumps);
+	}else
+		restart_level = RESET_SOC;
+
+#endif
 
 	ssr_wq = alloc_workqueue("ssr_wq", WQ_CPU_INTENSIVE, 0);
 	if (!ssr_wq)

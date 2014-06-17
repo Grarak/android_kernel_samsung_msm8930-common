@@ -181,7 +181,7 @@ void msm_sensor_start_stream(struct msm_sensor_ctrl_t *s_ctrl)
 		s_ctrl->msm_sensor_reg->start_stream_conf,
 		s_ctrl->msm_sensor_reg->start_stream_conf_size,
 		s_ctrl->msm_sensor_reg->default_data_type);
-	msleep(20);
+	msm_sensor_delay_frames(s_ctrl);
 }
 
 void msm_sensor_stop_stream(struct msm_sensor_ctrl_t *s_ctrl)
@@ -1794,11 +1794,17 @@ int32_t msm_sensor_i2c_probe(struct i2c_client *client,
 		pr_err("%s %s NULL sensor data\n", __func__, client->name);
 		return -EFAULT;
 	}
-#if defined(CONFIG_MACH_KS02)
-        if (s_ctrl->func_tbl->eeprom_power_up) {
-            rc = s_ctrl->func_tbl->eeprom_power_up(s_ctrl);
-            if (rc < 0)
-                pr_err("%s %s power up failed\n", __func__, client->name);
+
+#if defined(CONFIG_MACH_SERRANO)
+	if (strcmp(client->name, "s5k3h5xa") && strcmp(client->name, "s5k6a3yx"))
+		return -EFAULT;
+#endif
+
+#if defined(CONFIG_MACH_KS02) || defined(CONFIG_MACH_SERRANO) || defined(CONFIG_MACH_MELIUS)
+	if (s_ctrl->func_tbl->eeprom_power_up) {
+		rc = s_ctrl->func_tbl->eeprom_power_up(s_ctrl);
+		if (rc < 0)
+			pr_err("%s %s power up failed\n", __func__, client->name);
 	}
 
 
@@ -1810,9 +1816,9 @@ int32_t msm_sensor_i2c_probe(struct i2c_client *client,
 	/*End : shchang@qualcomm.com : 1104 - FROM*/
 
 	if (s_ctrl->func_tbl->eeprom_power_down)
-			s_ctrl->func_tbl->eeprom_power_down(s_ctrl); 
+			s_ctrl->func_tbl->eeprom_power_down(s_ctrl);
 #else
- 	rc = s_ctrl->func_tbl->sensor_power_up(s_ctrl);
+	rc = s_ctrl->func_tbl->sensor_power_up(s_ctrl);
 	if (rc < 0) {
 		pr_err("%s %s power up failed\n", __func__, client->name);
 		return rc;
@@ -1855,17 +1861,17 @@ int32_t msm_sensor_i2c_probe(struct i2c_client *client,
 	s_ctrl->sensor_v4l2_subdev.entity.revision =
 		s_ctrl->sensor_v4l2_subdev.devnode->num;
 	goto power_down;
-#if !defined(CONFIG_MACH_KS02) 
+#if !defined(CONFIG_MACH_KS02) && !defined(CONFIG_MACH_SERRANO) && !defined(CONFIG_MACH_MELIUS)
 probe_fail:
 	pr_err("%s %s_i2c_probe failed\n", __func__, client->name);
 #endif
 power_down:
 	if (rc > 0)
 		rc = 0;
-#if !defined(CONFIG_MACH_KS02) 
- 	s_ctrl->func_tbl->sensor_power_down(s_ctrl);
+#if !defined(CONFIG_MACH_KS02) && !defined(CONFIG_MACH_SERRANO) && !defined(CONFIG_MACH_MELIUS)
+	s_ctrl->func_tbl->sensor_power_down(s_ctrl);
 #endif
- 	s_ctrl->sensor_state = MSM_SENSOR_POWER_DOWN;
+	s_ctrl->sensor_state = MSM_SENSOR_POWER_DOWN;
 	return rc;
 }
 
@@ -1960,15 +1966,15 @@ int32_t msm_sensor_power(struct v4l2_subdev *sd, int on)
 	struct msm_sensor_ctrl_t *s_ctrl = get_sctrl(sd);
 	mutex_lock(s_ctrl->msm_sensor_mutex);
 	if (on) {
-		if(s_ctrl->sensor_state == MSM_SENSOR_POWER_UP) {
-			pr_err("%s: sensor already in power up state\n", __func__);
-			mutex_unlock(s_ctrl->msm_sensor_mutex);
-			return -EINVAL;
-		}
 		rc = s_ctrl->func_tbl->sensor_power_up(s_ctrl);
 		if (rc < 0) {
 			pr_err("%s: %s power_up failed rc = %d\n", __func__,
 				s_ctrl->sensordata->sensor_name, rc);
+#if defined(CONFIG_S5K4ECGX)
+			if (s_ctrl->func_tbl->sensor_power_down(s_ctrl) < 0)
+				pr_err("%s: %s power_down failed\n", __func__,
+				s_ctrl->sensordata->sensor_name);
+#endif
 			s_ctrl->sensor_state = MSM_SENSOR_POWER_DOWN;
 		} else {
 			if (s_ctrl->func_tbl->sensor_match_id)
@@ -1985,20 +1991,13 @@ int32_t msm_sensor_power(struct v4l2_subdev *sd, int on)
 					__func__,
 					s_ctrl->sensordata->sensor_name);
 				s_ctrl->sensor_state = MSM_SENSOR_POWER_DOWN;
-				goto power_up_failed;
 			}
 			s_ctrl->sensor_state = MSM_SENSOR_POWER_UP;
 		}
 	} else {
-		if(s_ctrl->sensor_state == MSM_SENSOR_POWER_DOWN) {
-			pr_err("%s: sensor already in power down state\n",__func__);
-			mutex_unlock(s_ctrl->msm_sensor_mutex);
-			return -EINVAL;
-		}
 		rc = s_ctrl->func_tbl->sensor_power_down(s_ctrl);
 		s_ctrl->sensor_state = MSM_SENSOR_POWER_DOWN;
 	}
-power_up_failed:
 	mutex_unlock(s_ctrl->msm_sensor_mutex);
 	return rc;
 }

@@ -36,7 +36,11 @@
 #include <linux/ioctl.h>
 
 #include "mdp4_video_enhance.h"
+#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_WVGA_PT)
+#include "mdp4_video_tuning_golden.h"
+#else
 #include "mdp4_video_tuning.h"
+#endif
 #include "msm_fb.h"
 #include "mdp.h"
 #include "mdp4.h"
@@ -58,9 +62,6 @@ extern int mdp_lut_push_i;
 unsigned int mDNIe_data[MAX_LUT_SIZE * 3];
 
 int play_speed_1_5;
-#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_HD_PT)
-boolean camera_mode;
-#endif
 
 int mDNIe_data_sharpness;
 
@@ -374,6 +375,8 @@ fail_rest:
 void sharpness_tune(int num)
 {
 	char *vg_base;
+	pr_info("%s num : %d", __func__, num);
+
 	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
 	vg_base = MDP_BASE + MDP4_VIDEO_BASE;
 	outpdw(vg_base + 0x8200, mdp4_ss_table_value((int8_t) num, 0));
@@ -407,10 +410,6 @@ void mDNIe_Set_Mode(enum Lcd_mDNIe_UI mode)
 	}
 
 	play_speed_1_5 = 0;
-#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_HD_PT)
-	video_mode = FALSE;
-	camera_mode = FALSE;
-#endif
 
 	switch (mode) {
 	case mDNIe_UI_MODE:
@@ -433,17 +432,11 @@ void mDNIe_Set_Mode(enum Lcd_mDNIe_UI mode)
 		}
 		pLut = VIDEO_LUT;
 		sharpvalue = SHARPNESS_VIDEO;
-#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_HD_PT)
-		video_mode = TRUE;
-#endif
 		break;
 
 	case mDNIe_CAMERA_MODE:
 		pLut = BYPASS_LUT;
 		sharpvalue = SHARPNESS_BYPASS;
-#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_HD_PT)
-		camera_mode = TRUE;
-#endif
 		break;
 
 	case mDNIe_NAVI:
@@ -533,7 +526,6 @@ int is_negativeMode_on(void)
 		return 0;
 	return 1;
 }
-
 void is_play_speed_1_5(int enable)
 {
 	play_speed_1_5 = enable;
@@ -809,9 +801,9 @@ static ssize_t playspeed_store(struct device *dev,
 static DEVICE_ATTR(playspeed, 0664,
 			playspeed_show,
 			playspeed_store);
+
 void init_mdnie_class(void)
 {
-	pr_debug("%s\n", __func__);	
 	mdnie_class = class_create(THIS_MODULE, "mdnie");
 	if (IS_ERR(mdnie_class))
 		pr_err("Failed to create class(mdnie)!\n");
@@ -864,7 +856,7 @@ void init_mdnie_class(void)
 	if (device_create_file
 		(tune_mdnie_dev, &dev_attr_playspeed) < 0)
 		pr_err("Failed to create device file(%s)!=n",
-		dev_attr_playspeed.attr.name);
+			dev_attr_playspeed.attr.name);
 
 #ifdef MDP4_VIDEO_ENHANCE_TUNING
 	if (device_create_file(tune_mdnie_dev, &dev_attr_tuning) < 0) {

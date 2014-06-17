@@ -22,6 +22,8 @@
 #include "msm_csi_register.h"
 #include "../msm.h"
 
+/*#define CONFIG_LOAD_FILE*/
+
 #ifdef CONFIG_MSM_CAMERA_DEBUG
 #define D(fmt, args...) pr_debug("msm: " fmt, ##args)
 #else
@@ -312,13 +314,6 @@ static int msm_ctrl_cmd_done(void *arg)
 		goto ctrl_cmd_done_error;
 	}
 
-	if(command->queue_idx < 0 ||
-		command->queue_idx >= MAX_NUM_ACTIVE_CAMERA) {
-		pr_err("%s: Invalid value OR index %d\n", __func__,
-		  command->queue_idx);
-		goto ctrl_cmd_done_error;
-	}
-
 	if (!g_server_dev.server_queue[command->queue_idx].queue_active) {
 		pr_err("%s: Invalid queue\n", __func__);
 		goto ctrl_cmd_done_error;
@@ -347,8 +342,7 @@ static int msm_ctrl_cmd_done(void *arg)
 				max_control_command_size);
 			goto ctrl_cmd_done_error;
 		}
-		if (copy_from_user(command->value, (void __user *)uptr,
-			command->length)) {
+		if (copy_from_user(command->value, uptr, command->length)) {
 			pr_err("%s: copy_from_user failed, size=%d\n",
 				__func__, sizeof(struct msm_ctrl_cmd));
 			goto ctrl_cmd_done_error;
@@ -384,6 +378,10 @@ static int msm_server_control(struct msm_cam_server_dev *server_dev,
 	struct v4l2_event v4l2_evt;
 	struct msm_isp_event_ctrl *isp_event;
 	void *ctrlcmd_data;
+
+#ifdef CONFIG_LOAD_FILE
+	out->timeout_ms = 10000;
+#endif
 
 	event_qcmd = kzalloc(sizeof(struct msm_queue_cmd), GFP_KERNEL);
 	if (!event_qcmd) {
@@ -457,15 +455,16 @@ static int msm_server_control(struct msm_cam_server_dev *server_dev,
 	} while (wait_count > 0);
 	D("Waiting is over for config status\n");
 	if (list_empty_careful(&queue->list)) {
-		if (!rc) {
+		if (!rc)
 			rc = -ETIMEDOUT;
-			msm_drain_eventq(
-			&server_dev->server_queue[out->queue_idx].eventData_q);
-		}
 		if (rc < 0) {
 			if (++server_dev->server_evt_id == 0)
 				server_dev->server_evt_id++;
 			pr_err("%s: wait_event error %d\n", __func__, rc);
+		if (rc == -ETIMEDOUT) { 
+			pr_err("%s: cmdtype: %d, timeout_ms: %d, stream_type: %d\n", __func__, out->type, out->timeout_ms, out->stream_type); 
+		}
+
 			return rc;
 		}
 	}
@@ -498,7 +497,6 @@ static int msm_server_control(struct msm_cam_server_dev *server_dev,
 	return rc;
 
 ctrlcmd_alloc_fail:
-	mutex_unlock(&server_dev->server_queue_lock);
 	kfree(isp_event);
 isp_event_alloc_fail:
 	kfree(event_qcmd);
@@ -2469,7 +2467,7 @@ static int msm_setup_server_dev(struct platform_device *pdev)
 	g_server_dev.video_dev = video_device_alloc();
 	if (g_server_dev.video_dev == NULL) {
 		pr_err("%s: video_device_alloc failed\n", __func__);
-		return rc;
+		goto setup_dev_fail4;
 	}
 
 	strlcpy(g_server_dev.video_dev->name, pdev->name,
@@ -2488,6 +2486,8 @@ static int msm_setup_server_dev(struct platform_device *pdev)
 		sizeof(g_server_dev.media_dev.model));
 	g_server_dev.media_dev.dev = &pdev->dev;
 	rc = media_device_register(&g_server_dev.media_dev);
+	if (rc < 0)
+		goto  setup_dev_fail3;
 	g_server_dev.v4l2_dev.mdev = &g_server_dev.media_dev;
 	media_entity_init(&g_server_dev.video_dev->entity, 0, NULL, 0);
 	g_server_dev.video_dev->entity.type = MEDIA_ENT_T_DEVNODE_V4L;
@@ -2495,7 +2495,8 @@ static int msm_setup_server_dev(struct platform_device *pdev)
 
 	rc = video_register_device(g_server_dev.video_dev,
 		VFL_TYPE_GRABBER, 100);
-
+	if (rc < 0)
+		goto  setup_dev_fail2;
 	g_server_dev.video_dev->entity.name =
 		video_device_node_name(g_server_dev.video_dev);
 
@@ -2533,17 +2534,37 @@ static int msm_setup_server_dev(struct platform_device *pdev)
 	if (g_server_dev.domain_num < 0) {
 		pr_err("%s: could not register domain\n", __func__);
 		rc = -ENODEV;
-		return rc;
+		goto setup_dev_fail1;
 	}
 	g_server_dev.domain =
 		msm_get_iommu_domain(g_server_dev.domain_num);
 	if (!g_server_dev.domain) {
 		pr_err("%s: cannot find domain\n", __func__);
 		rc = -ENODEV;
-		return rc;
 	}
 #endif
 	return rc;
+
+setup_dev_fail1:
+	msm_destroy_v4l2_event_queue(&g_server_dev.server_command_queue.eventHandle);
+	video_unregister_device(g_server_dev.video_dev);
+setup_dev_fail2:
+	media_device_unregister(&g_server_dev.media_dev);
+setup_dev_fail3:
+        video_device_release(g_server_dev.video_dev);
+setup_dev_fail4:
+	v4l2_device_unregister(&g_server_dev.v4l2_dev);
+	return rc;
+}
+
+static void msm_release_server_dev(void)
+{
+	D("%s\n", __func__);
+	msm_destroy_v4l2_event_queue(&g_server_dev.server_command_queue.eventHandle);
+	video_unregister_device(g_server_dev.video_dev);
+	media_device_unregister(&g_server_dev.media_dev);
+	video_device_release(g_server_dev.video_dev);
+	v4l2_device_unregister(&g_server_dev.v4l2_dev);
 }
 
 static long msm_server_send_v4l2_evt(void *evt)
@@ -2682,16 +2703,12 @@ int msm_server_send_ctrl(struct msm_ctrl_cmd *out,
 	struct msm_queue_cmd *event_qcmd;
 	struct msm_ctrl_cmd *ctrlcmd;
 	struct msm_cam_server_dev *server_dev = &g_server_dev;
-	struct msm_device_queue *queue;
+	struct msm_device_queue *queue =
+		&server_dev->server_queue[out->queue_idx].ctrl_q;
+
 	struct v4l2_event v4l2_evt;
 	struct msm_isp_event_ctrl *isp_event;
 	void *ctrlcmd_data;
-
-	if(out->queue_idx < 0 || out->queue_idx >= MAX_NUM_ACTIVE_CAMERA) {
-		pr_err("%s: Invalid index %d\n", __func__, out->queue_idx);
-		return -EINVAL;
-	}
-	queue = &server_dev->server_queue[out->queue_idx].ctrl_q;
 
 	event_qcmd = kzalloc(sizeof(struct msm_queue_cmd), GFP_KERNEL);
 	if (!event_qcmd) {
@@ -2793,7 +2810,6 @@ int msm_server_send_ctrl(struct msm_ctrl_cmd *out,
 	return rc;
 
 ctrlcmd_alloc_fail:
-	mutex_unlock(&server_dev->server_queue_lock);
 	kfree(isp_event);
 isp_event_alloc_fail:
 	kfree(event_qcmd);
@@ -2847,15 +2863,15 @@ static int msm_open_config(struct inode *inode, struct file *fp)
 		return rc;
 	}
 	config_cam->use_count++;
-
+	if (NULL != g_server_dev.pcam_active[config_cam->dev_num]) {  //Debug Patch : P130612-0176
 	/* assume there is only one active camera possible*/
-	if (!g_server_dev.pcam_active[config_cam->dev_num]) {
-		pr_err("%s: camera %d is not active\n", __func__, config_cam->dev_num);
-		config_cam->use_count--;
-		return -ENODEV;
-	}
 	config_cam->p_mctl = msm_cam_server_get_mctl(
 		g_server_dev.pcam_active[config_cam->dev_num]->mctl_handle);
+	}
+	else{
+	pr_err("%s :g_server_dev.pcam_active[config_cam->dev_num] is NULL\n",__func__);
+	return -1;
+	}
 	if (!config_cam->p_mctl) {
 		pr_err("%s: cannot find mctl\n", __func__);
 		return -ENODEV;
@@ -3278,6 +3294,7 @@ static int __devinit msm_camera_probe(struct platform_device *pdev)
 	if (rc < 0) {
 		pr_err("%s: failed to create server dev: %d\n", __func__,
 		rc);
+		class_destroy(msm_class);
 		return rc;
 	}
 
@@ -3286,6 +3303,8 @@ static int __devinit msm_camera_probe(struct platform_device *pdev)
 		if (rc < 0) {
 			pr_err("%s:failed to create config dev: %d\n",
 			 __func__, rc);
+			msm_release_server_dev();
+			class_destroy(msm_class);
 			return rc;
 		}
 	}

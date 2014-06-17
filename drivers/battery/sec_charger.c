@@ -25,10 +25,7 @@ static enum power_supply_property sec_charger_props[] = {
 	POWER_SUPPLY_PROP_CHARGE_TYPE,
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_ONLINE,
-	POWER_SUPPLY_PROP_CURRENT_MAX,
-	POWER_SUPPLY_PROP_CURRENT_AVG,
 	POWER_SUPPLY_PROP_CURRENT_NOW,
-	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
 };
 
 static int sec_chg_get_property(struct power_supply *psy,
@@ -42,16 +39,9 @@ static int sec_chg_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_ONLINE:
 		val->intval = charger->charging_current ? 1 : 0;
 		break;
-
-	case POWER_SUPPLY_PROP_CURRENT_MAX:	/* input current limit set */
-		val->intval = charger->charging_current_max;
-		break;
-
 	case POWER_SUPPLY_PROP_STATUS:
 	case POWER_SUPPLY_PROP_CHARGE_TYPE:
 	case POWER_SUPPLY_PROP_HEALTH:
-	case POWER_SUPPLY_PROP_CURRENT_AVG:	/* charging current */
-	/* calculated input current limit value */
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
 		if (!sec_hal_chg_get_property(charger->client, psp, val))
 			return -EINVAL;
@@ -68,13 +58,11 @@ static int sec_chg_set_property(struct power_supply *psy,
 {
 	struct sec_charger_info *charger =
 		container_of(psy, struct sec_charger_info, psy_chg);
-	union power_supply_propval input_value;
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
 		charger->status = val->intval;
 		break;
-
 	/* val->intval : type */
 	case POWER_SUPPLY_PROP_ONLINE:
 		charger->cable_type = val->intval;
@@ -84,10 +72,6 @@ static int sec_chg_set_property(struct power_supply *psy,
 			charger->is_charging = true;
 
 		/* current setting */
-		charger->charging_current_max =
-			charger->pdata->charging_current[
-			val->intval].input_current_limit;
-
 		charger->charging_current =
 			charger->pdata->charging_current[
 			val->intval].fast_charging_current;
@@ -95,55 +79,13 @@ static int sec_chg_set_property(struct power_supply *psy,
 		if (!sec_hal_chg_set_property(charger->client, psp, val))
 			return -EINVAL;
 		break;
-
-	/* val->intval : input current limit set */
-	case POWER_SUPPLY_PROP_CURRENT_MAX:
-		charger->charging_current_max = val->intval;
-	/* to control charging current,
-	 * use input current limit and set charging current as much as possible
-	 * so we only control input current limit to control charge current
-	 */
-	case POWER_SUPPLY_PROP_CURRENT_NOW:
-		if (!sec_hal_chg_set_property(charger->client, psp, val))
-			return -EINVAL;
-		break;
-
 	/* val->intval : charging current */
-	case POWER_SUPPLY_PROP_CURRENT_AVG:
+	case POWER_SUPPLY_PROP_CURRENT_NOW:
 		charger->charging_current = val->intval;
 
 		if (!sec_hal_chg_set_property(charger->client, psp, val))
 			return -EINVAL;
 		break;
-
-	/* val->intval : SIOP level (%)
-	 * SIOP charging current setting
-	 */
-	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
-		/* change val as charging current by SIOP level
-		 * do NOT change initial charging current setting
-		 */
-		input_value.intval =
-			charger->charging_current * val->intval / 100;
-
-		/* charging current should be over than USB charging current */
-		if (charger->pdata->chg_functions_setting &
-			SEC_CHARGER_MINIMUM_SIOP_CHARGING_CURRENT) {
-			if (input_value.intval > 0 &&
-				input_value.intval <
-				charger->pdata->charging_current[
-				POWER_SUPPLY_TYPE_USB].fast_charging_current)
-				input_value.intval =
-				charger->pdata->charging_current[
-				POWER_SUPPLY_TYPE_USB].fast_charging_current;
-		}
-
-		/* set charging current as new value */
-		if (!sec_hal_chg_set_property(charger->client,
-			POWER_SUPPLY_PROP_CURRENT_AVG, &input_value))
-			return -EINVAL;
-		break;
-
 	default:
 		return -EINVAL;
 	}

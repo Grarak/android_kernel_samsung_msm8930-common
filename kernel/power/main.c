@@ -18,10 +18,8 @@
 #include <linux/hrtimer.h>
 
 #include "power.h"
-
 #ifdef CONFIG_SEC_DVFS
 #include <linux/cpufreq.h>
-#include <linux/rq_stats.h>
 #endif
 
 #define MAX_BUF 100
@@ -513,7 +511,7 @@ static unsigned long apps_min_freq;
 static unsigned long apps_max_freq;
 static unsigned long thermald_max_freq;
 
-static unsigned long touch_min_freq = MIN_TOUCH_LIMIT;
+static unsigned long touch_min_freq;
 static unsigned long unicpu_max_freq = MAX_UNICPU_LIMIT;
 
 
@@ -639,12 +637,6 @@ static ssize_t cpufreq_min_limit_store(struct kobject *kobj,
 
 	set_freq_limit(DVFS_APPS_MIN_ID, freq_min_limit);
 
-#ifdef CONFIG_SEC_DVFS_DUAL
-	if (freq_min_limit >= MAX_FREQ_LIMIT)
-		dual_boost(1);
-	else
-		dual_boost(0);
-#endif
 	return n;
 }
 

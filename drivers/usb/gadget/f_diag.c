@@ -419,7 +419,7 @@ int usb_diag_read(struct usb_diag_ch *ch, struct diag_request *d_req)
 	req->buf = d_req->buf;
 	req->length = d_req->length;
 	req->context = d_req;
-	if (usb_ep_queue(ctxt->out, req, GFP_ATOMIC)) {
+	if (ctxt->out->ops && usb_ep_queue(ctxt->out, req, GFP_ATOMIC)) {
 		/* If error add the link to linked list again*/
 		spin_lock_irqsave(&ctxt->lock, flags);
 		list_add_tail(&req->list, &ctxt->read_pool);
@@ -478,7 +478,7 @@ int usb_diag_write(struct usb_diag_ch *ch, struct diag_request *d_req)
 	req->buf = d_req->buf;
 	req->length = d_req->length;
 	req->context = d_req;
-	if (usb_ep_queue(ctxt->in, req, GFP_ATOMIC)) {
+	if (ctxt->in->ops && usb_ep_queue(ctxt->in, req, GFP_ATOMIC)) {
 		/* If error add the link to linked list again*/
 		spin_lock_irqsave(&ctxt->lock, flags);
 		list_add_tail(&req->list, &ctxt->write_pool);

@@ -42,7 +42,7 @@
 #define CY_DRIVER_MAJOR 02
 #define CY_DRIVER_MINOR 02
 
-#define CY_DRIVER_REVCTRL 403676
+#define CY_DRIVER_REVCTRL 409009
 
 #define CY_DRIVER_VERSION			    \
 CYTTSP4_STRINGIFY(CY_DRIVER_NAME)		    \
@@ -50,7 +50,7 @@ CYTTSP4_STRINGIFY(CY_DRIVER_NAME)		    \
 "." CYTTSP4_STRINGIFY(CY_DRIVER_MINOR)		    \
 "." CYTTSP4_STRINGIFY(CY_DRIVER_REVCTRL)
 
-#define CY_DRIVER_DATE "20121114"	/* YYYYMMDD */
+#define CY_DRIVER_DATE "20121127"	/* YYYYMMDD */
 
 /* x-axis resolution of panel in pixels */
 #define CY_PCFG_RESOLUTION_X_MASK 0x7F
@@ -72,11 +72,20 @@ struct touch_settings {
 	uint8_t         tag;
 } __packed;
 
+#ifndef SAMSUNG_SYSINFO_DATA
+#define SAMSUNG_SYSINFO_DATA
+#endif
 struct cyttsp4_touch_firmware {
 	const uint8_t *img;
 	uint32_t size;
+#ifndef SAMSUNG_SYSINFO_DATA
 	const uint8_t *ver;
 	uint8_t vsize;
+#else
+	uint8_t hw_version;
+	uint8_t config_version;
+	uint16_t fw_version;
+#endif
 } __packed;
 
 struct cyttsp4_core_platform_data {
@@ -91,6 +100,7 @@ struct cyttsp4_core_platform_data {
 		int on, struct device *dev, atomic_t *ignore_irq);
 	int (*irq_stat)(struct cyttsp4_core_platform_data *pdata,
 		struct device *dev);
+	int (*led_power)(int on);
 	struct touch_settings *sett[CY_TOUCH_SETTINGS_MAX];
 	struct cyttsp4_touch_firmware *fw;
 };

@@ -64,17 +64,15 @@ int snd_soc_dpcm_can_be_free_stop(struct snd_soc_pcm_runtime *fe,
 		struct snd_soc_pcm_runtime *be, int stream)
 {
 	struct snd_soc_dpcm_params *dpcm_params;
-	int state;
 
 	list_for_each_entry(dpcm_params, &be->dpcm[stream].fe_clients, list_fe) {
 
 		if (dpcm_params->fe == fe)
 			continue;
 
-		state = dpcm_params->fe->dpcm[stream].state;
-		if (state == SND_SOC_DPCM_STATE_START ||
-			state == SND_SOC_DPCM_STATE_PAUSED ||
-			state == SND_SOC_DPCM_STATE_SUSPEND)
+		if (dpcm_params->fe->dpcm[stream].state == SND_SOC_DPCM_STATE_START ||
+			dpcm_params->fe->dpcm[stream].state == SND_SOC_DPCM_STATE_PAUSED ||
+			dpcm_params->fe->dpcm[stream].state == SND_SOC_DPCM_STATE_SUSPEND)
 			return 0;
 	}
 	return 1;
@@ -89,18 +87,16 @@ static int snd_soc_dpcm_can_be_params(struct snd_soc_pcm_runtime *fe,
 		struct snd_soc_pcm_runtime *be, int stream)
 {
 	struct snd_soc_dpcm_params *dpcm_params;
-	int state;
 
 	list_for_each_entry(dpcm_params, &be->dpcm[stream].fe_clients, list_fe) {
 
 		if (dpcm_params->fe == fe)
 			continue;
 
-		state = dpcm_params->fe->dpcm[stream].state;
-		if (state == SND_SOC_DPCM_STATE_START ||
-			state == SND_SOC_DPCM_STATE_PAUSED ||
-			state == SND_SOC_DPCM_STATE_SUSPEND ||
-			state == SND_SOC_DPCM_STATE_PREPARE)
+		if (dpcm_params->fe->dpcm[stream].state == SND_SOC_DPCM_STATE_START ||
+			dpcm_params->fe->dpcm[stream].state == SND_SOC_DPCM_STATE_PAUSED ||
+			dpcm_params->fe->dpcm[stream].state == SND_SOC_DPCM_STATE_SUSPEND ||
+			dpcm_params->fe->dpcm[stream].state == SND_SOC_DPCM_STATE_PREPARE)
 			return 0;
 	}
 	return 1;
@@ -471,10 +467,12 @@ static int soc_pcm_close(struct snd_pcm_substream *substream)
 
 	/* Muting the DAC suppresses artifacts caused during digital
 	 * shutdown, for example from stopping clocks.
-	 *
-	 * Always call Mute for Codec Dai irrespective of Stream type.
+	 * Always call Mute for Codec Dai irrespective of Stream type. 
 	 */
-	snd_soc_dai_digital_mute(codec_dai, 1);
+#ifndef CONFIG_WCD9304_CODEC
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+#endif
+		snd_soc_dai_digital_mute(codec_dai, 1);
 
 	if (cpu_dai->driver->ops->shutdown)
 		cpu_dai->driver->ops->shutdown(substream, cpu_dai);

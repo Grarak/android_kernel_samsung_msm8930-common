@@ -35,7 +35,8 @@
 #include <linux/mfd/pmic8058.h>
 #include <linux/input.h>
 #include <linux/sii9234.h>
-
+//#include <linux/mfd/pm8xxx/pm8921-sec-charger.h>
+#include <linux/mfd/pm8xxx/pm8921-charger.h>
 
 #define INT_MASK1					0x5C
 #define INT_MASK2					0xA0

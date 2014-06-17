@@ -66,6 +66,7 @@
 
 #define VENDOR_NAME	"TAOS"
 #define CHIP_NAME       "TMD3782"
+#define CHIP_ID			0x69
 
 #define OFFSET_FILE_PATH	"/efs/prox_cal"
 
@@ -134,7 +135,7 @@
 #define STA_PRXINTR				0x20
 
 #define	MAX_ALS				0xffff
-#define	MIN_ALS 				10
+#define	MIN_ALS				10
 /* power control */
 #define ON				1
 #define OFF				0
@@ -398,7 +399,8 @@ static int taos_get_cct(struct taos_data *taos)
 }
 static int taos_get_lux(struct taos_data *taos)
 {
-	s32 rp1, gp1, bp1, cp1;
+	s32 rp1, gp1, bp1;
+/*	s32 cp1;	*/
 	s32 clrdata = 0;
 	s32 reddata = 0;
 	s32 grndata = 0;
@@ -462,6 +464,11 @@ static int taos_get_lux(struct taos_data *taos)
 		ret = opt_i2c_write(taos, (CMD_REG | GAIN), &reg_gain);
 	}
 
+	if (ret) {
+		printk(KERN_ERR"%s i2c write error\n", __func__);
+		return 0;
+	}
+
 	/* calculate lux */
 	taos->irdata = (reddata + grndata + bludata - clrdata)/2;
 
@@ -469,7 +476,7 @@ static int taos_get_lux(struct taos_data *taos)
 	rp1 = taos->reddata - taos->irdata;
 	gp1 = taos->grndata - taos->irdata;
 	bp1 = taos->bludata - taos->irdata;
-	cp1 = taos->clrdata - taos->irdata;
+/*	cp1 = taos->clrdata - taos->irdata; */
 
 	calculated_lux = (rp1 * R_Coef1 + gp1 * G_Coef1 + bp1 * B_Coef1) /1000;
 
@@ -853,7 +860,7 @@ static int proximity_store_offset(struct device *dev, bool do_calib)
 		(char *)&taos->offset_value, sizeof(u16), &offset_filp->f_pos);
 	if (err != sizeof(u16)) {
 		pr_err("%s: Can't write the offset data to file\n", __func__);
-		err = -EIO;
+/*		err = -EIO;	*/
 	}
 
 	filp_close(offset_filp, current->files);
@@ -894,6 +901,11 @@ static ssize_t proximity_cal_show(struct device *dev,
 	int ret = 0;
 
 	ret = proximity_open_offset(taos);
+	if (ret < 0 && ret != -ENOENT) {
+		pr_err("%s: proximity_open_offset() failed\n",
+		__func__);
+		return ret;
+	}
 
 	return sprintf(buf, "%d,%d,%d\n",
 		taos->offset_value, taos->threshold_high, taos->threshold_low);
@@ -1372,7 +1384,7 @@ irqreturn_t taos_irq_handler(int irq, void *data)
 
 static int taos_setup_irq(struct taos_data *taos)
 {
-	int rc = -EIO;
+	int rc;
 	struct taos_platform_data *pdata = taos->pdata;
 	int irq;
 
@@ -1448,6 +1460,7 @@ static int taos_i2c_probe(struct i2c_client *client,
 			  const struct i2c_device_id *id)
 {
 	int ret = -ENODEV;
+	int chipid = 0;
 	struct input_dev *input_dev;
 	struct taos_data *taos;
 	struct taos_platform_data *pdata = client->dev.platform_data;
@@ -1467,6 +1480,12 @@ static int taos_i2c_probe(struct i2c_client *client,
 		pr_err("%s: failed to alloc memory for module data\n",
 		       __func__);
 		return -ENOMEM;
+	}
+
+	chipid = i2c_smbus_read_byte_data(client, CMD_REG | CHIPID);
+	if (chipid != CHIP_ID) {
+		pr_err("%s: i2c read error [%X]\n", __func__, chipid);
+		goto err_chip_id_or_i2c_error;
 	}
 
 	taos->pdata = pdata;
@@ -1647,6 +1666,7 @@ err_input_allocate_device_proximity:
 	gpio_free(taos->pdata->als_int);
 	mutex_destroy(&taos->power_lock);
 	wake_lock_destroy(&taos->prx_wake_lock);
+err_chip_id_or_i2c_error:
 	kfree(taos);
 done:
 	return ret;

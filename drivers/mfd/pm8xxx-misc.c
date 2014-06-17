@@ -22,6 +22,8 @@
 #include <linux/delay.h>
 #include <linux/mfd/pm8xxx/core.h>
 #include <linux/mfd/pm8xxx/misc.h>
+#include <asm/system_info.h>
+#include <mach/apq8064-gpio.h>
 
 /* PON CTRL 1 register */
 #define REG_PM8XXX_PON_CTRL_1			0x01C
@@ -181,6 +183,41 @@ static int pm8xxx_misc_masked_write(struct pm8xxx_misc_chip *chip, u16 addr,
 			reg, rc);
 	return rc;
 }
+
+/**
+ * pm8xxx_read_register - Read a PMIC register
+ * @addr: PMIC register address
+ * @value: Output parameter which gets the value of the register read.
+ * RETURNS: an appropriate -ERRNO error value on error, or zero for success.
+ */
+int pm8xxx_read_register(u16 addr, u8 *value)
+{
+	struct pm8xxx_misc_chip *chip;
+	unsigned long flags;
+	int rc = 0;
+
+	spin_lock_irqsave(&pm8xxx_misc_chips_lock, flags);
+
+	/* Loop over all attached PMICs and call specific functions for them. */
+	list_for_each_entry(chip, &pm8xxx_misc_chips, link) {
+		switch (chip->version) {
+		case PM8XXX_VERSION_8921:
+			rc = pm8xxx_readb(chip->dev->parent, addr, value);
+			if (rc) {
+				pr_err("pm8xxx_readb(0x%03X) failed, rc=%d\n",
+								addr, rc);
+				break;
+			}
+		default:
+			break;
+		}
+	}
+
+	spin_unlock_irqrestore(&pm8xxx_misc_chips_lock, flags);
+
+	return rc;
+}
+EXPORT_SYMBOL_GPL(pm8xxx_read_register);
 
 /*
  * Set an SMPS regulator to be disabled in its CTRL register, but enabled
@@ -1210,6 +1247,26 @@ static int __devinit pm8xxx_misc_probe(struct platform_device *pdev)
 	spin_unlock_irqrestore(&pm8xxx_misc_chips_lock, flags);
 
 	platform_set_drvdata(pdev, chip);
+
+#ifdef CONFIG_MACH_JF_ATT
+	/* disable pmic coincell charging under att rev06
+	 * because super cap cannot be charged under att rev06
+	 */
+	if (system_rev < BOARD_REV06) {
+		struct pm8xxx_coincell_chg chg_config = {
+			.state = PM8XXX_COINCELL_CHG_DISABLE,
+			.voltage = PM8XXX_COINCELL_VOLTAGE_3p2V,
+			.resistor = PM8XXX_COINCELL_RESISTOR_2100_OHMS,
+		};
+		int ret = pm8xxx_coincell_chg_config(&chg_config);
+		if (ret)
+			pr_err("%s: coincell disabling failed ret = %d",
+					__func__, ret);
+		else
+			pr_info("%s: att rev%d coincell disabled",
+					__func__, system_rev);
+	}
+#endif
 
 	return rc;
 

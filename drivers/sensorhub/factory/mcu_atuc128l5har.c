@@ -25,8 +25,13 @@ ssize_t mcu_revision_show(struct device *dev,
 {
 	struct ssp_data *data = dev_get_drvdata(dev);
 
+#if defined(CONFIG_MACH_JACTIVE_ATT) || defined(CONFIG_MACH_JACTIVE_EUR)
+	return sprintf(buf, "AT01%u,AT01%u\n", data->uCurFirmRev,
+		get_module_rev(data));
+#else
 	return sprintf(buf, "AT01%u,AT01%u\n", get_module_rev(data),
 		data->uCurFirmRev);
+#endif
 }
 
 ssize_t mcu_model_name_show(struct device *dev,
@@ -250,7 +255,9 @@ exit:
 		"gyro %d,%d,%d\n"
 		"mag %d,%d,%d\n"
 		"baro %d,%d\n"
+		"ges %d,%d,%d,%d\n"
 		"prox %u,%u\n"
+		"temp %d,%d,%d\n"
 		"light %u,%u,%u,%u\n", __func__,
 		fsb[ACCELEROMETER_SENSOR].x, fsb[ACCELEROMETER_SENSOR].y,
 		fsb[ACCELEROMETER_SENSOR].z, fsb[GYROSCOPE_SENSOR].x,
@@ -258,12 +265,17 @@ exit:
 		fsb[GEOMAGNETIC_SENSOR].x, fsb[GEOMAGNETIC_SENSOR].y,
 		fsb[GEOMAGNETIC_SENSOR].z, fsb[PRESSURE_SENSOR].pressure[0],
 		fsb[PRESSURE_SENSOR].pressure[1],
+		fsb[GESTURE_SENSOR].data[0], fsb[GESTURE_SENSOR].data[1],
+		fsb[GESTURE_SENSOR].data[2], fsb[GESTURE_SENSOR].data[3],
 		fsb[PROXIMITY_SENSOR].prox[0], fsb[PROXIMITY_SENSOR].prox[1],
+		fsb[TEMPERATURE_HUMIDITY_SENSOR].data[0],
+		fsb[TEMPERATURE_HUMIDITY_SENSOR].data[1],
+		fsb[TEMPERATURE_HUMIDITY_SENSOR].data[2],
 		fsb[LIGHT_SENSOR].r, fsb[LIGHT_SENSOR].g, fsb[LIGHT_SENSOR].b,
 		fsb[LIGHT_SENSOR].w);
 
 	return sprintf(buf, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%u,"
-		"%u,%u,%u,%u\n",
+		"%u,%u,%u,%u,%d,%d,%d,%d,%d,%d\n",
 		fsb[ACCELEROMETER_SENSOR].x, fsb[ACCELEROMETER_SENSOR].y,
 		fsb[ACCELEROMETER_SENSOR].z, fsb[GYROSCOPE_SENSOR].x,
 		fsb[GYROSCOPE_SENSOR].y, fsb[GYROSCOPE_SENSOR].z,
@@ -271,5 +283,9 @@ exit:
 		fsb[GEOMAGNETIC_SENSOR].z, fsb[PRESSURE_SENSOR].pressure[0],
 		fsb[PRESSURE_SENSOR].pressure[1], fsb[PROXIMITY_SENSOR].prox[1],
 		fsb[LIGHT_SENSOR].r, fsb[LIGHT_SENSOR].g, fsb[LIGHT_SENSOR].b,
-		fsb[LIGHT_SENSOR].w);
+		fsb[LIGHT_SENSOR].w,
+		fsb[GESTURE_SENSOR].data[0], fsb[GESTURE_SENSOR].data[1],
+		fsb[GESTURE_SENSOR].data[2], fsb[GESTURE_SENSOR].data[3],
+		fsb[TEMPERATURE_HUMIDITY_SENSOR].data[0],
+		fsb[TEMPERATURE_HUMIDITY_SENSOR].data[1]);
 }

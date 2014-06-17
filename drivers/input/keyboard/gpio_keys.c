@@ -32,13 +32,22 @@
 #if defined(CONFIG_SEC_DEBUG)
 #include <mach/sec_debug.h>
 #endif
-#if defined(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI)
+#ifdef CONFIG_MACH_JF
 #include <linux/i2c/synaptics_rmi.h>
 #endif
 
+#if defined (CONFIG_SEC_PRODUCT_8930)
+#if defined(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI)
+#include <linux/i2c/synaptics_rmi_msm8930.h>
+#endif
+#endif
+
+
+#if defined (CONFIG_SEC_PRODUCT_8930)
 #if defined(CONFIG_KEYBOARD_GPIO_EXTENDED_RESUME_EVENT)
 extern int wakeup_gpio_num;
 static int force_wakeup_evt;
+#endif
 #endif
 
 struct gpio_button_data {
@@ -346,9 +355,15 @@ static void flip_cover_work(struct work_struct *work)
 {
 #if defined(CONFIG_MACH_MELIUS_EUR_OPEN) \
             || defined(CONFIG_MACH_MELIUS_EUR_LTE) \
+            || defined(CONFIG_MACH_MELIUS_ATT) \
+            || defined(CONFIG_MACH_MELIUS_SPR) \
+            || defined(CONFIG_MACH_MELIUS_TMO) \
+            || defined(CONFIG_MACH_MELIUS_USC) \
+            || defined(CONFIG_MACH_MELIUS_VZW) \
             || defined(CONFIG_MACH_MELIUS_SKT) \
             || defined(CONFIG_MACH_MELIUS_KTT) \
-            || defined(CONFIG_MACH_MELIUS_LGT)
+            || defined(CONFIG_MACH_MELIUS_LGT) \
+	    || defined(CONFIG_MACH_MELIUS_MTR)
 #define delay_exit_count 0
 	int gpio_value = 0;
 	int delay_count = 2;
@@ -358,37 +373,42 @@ static void flip_cover_work(struct work_struct *work)
 				flip_cover_dwork.work);
 	ddata->flip_cover = gpio_get_value(ddata->gpio_flip_cover);
 
-	printk(KERN_DEBUG "[keys] %s : %d\n",
-		__func__, ddata->flip_cover);
+	printk(KERN_DEBUG "[keys] %s : %d\n", __func__, ddata->flip_cover);
 #if defined(CONFIG_MACH_MELIUS_EUR_OPEN) \
             || defined(CONFIG_MACH_MELIUS_EUR_LTE) \
+            || defined(CONFIG_MACH_MELIUS_ATT) \
+            || defined(CONFIG_MACH_MELIUS_SPR) \
+            || defined(CONFIG_MACH_MELIUS_TMO) \
+            || defined(CONFIG_MACH_MELIUS_USC) \
+            || defined(CONFIG_MACH_MELIUS_VZW) \
             || defined(CONFIG_MACH_MELIUS_SKT) \
             || defined(CONFIG_MACH_MELIUS_KTT) \
-            || defined(CONFIG_MACH_MELIUS_LGT)
-		while(delay_count--) {
-			msleep(50);
-			gpio_value = gpio_get_value(ddata->gpio_flip_cover);	 
-			printk(KERN_DEBUG "[keys] %s : WR %d\n",__func__, gpio_value);
-			if(ddata->flip_cover == gpio_value) {
-				if(delay_count == delay_exit_count) {
-					printk(KERN_DEBUG "[keys] %s : Run input report delay_count = %d\n",__func__, delay_count);					
-					input_report_switch(ddata->input,
-						SW_FLIP, ddata->flip_cover);
-					input_sync(ddata->input);
+            || defined(CONFIG_MACH_MELIUS_LGT) \
+	    || defined(CONFIG_MACH_MELIUS_MTR)
+	while(delay_count--) {
+		msleep(50);
+		gpio_value = gpio_get_value(ddata->gpio_flip_cover);
+		printk(KERN_DEBUG "[keys] %s : WR %d\n",__func__, gpio_value);
+		if(ddata->flip_cover == gpio_value) {
+			if(delay_count == delay_exit_count) {
+				printk(KERN_DEBUG "[keys] %s : Run input report delay_count = %d\n",__func__, delay_count);
+				input_report_switch(ddata->input,
+					SW_FLIP, ddata->flip_cover);
+				input_sync(ddata->input);
 #if defined(CONFIG_MACH_MELIUS)
 #if defined(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI)
-                    synaptics_inform_callbacks(RMI4_CALLBACK_HALLSENSOR, ddata->flip_cover);
+				synaptics_inform_callbacks(RMI4_CALLBACK_HALLSENSOR,
+						ddata->flip_cover);
 #endif
 #endif
-				} else {
-					continue;	
-				}
-			}else{
-				printk(KERN_DEBUG "[keys] %s : Different GPIO Value Skip Flip Work  ddata->flip_cover  = %d , gpio_value =  %d\n",__func__, ddata->flip_cover,gpio_value);
-				break;
+			} else {
+				continue;
 			}
-			
+		}else{
+			printk(KERN_DEBUG "[keys] %s : Different GPIO Value Skip Flip Work  ddata->flip_cover  = %d , gpio_value =  %d\n",__func__, ddata->flip_cover,gpio_value);
+			break;
 		}
+	}
 #else
 
 	input_report_switch(ddata->input,
@@ -406,7 +426,6 @@ static irqreturn_t flip_cover_detect(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 #endif
-
 static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 {
 	const struct gpio_keys_button *button = bdata->button;
@@ -418,6 +437,7 @@ static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 	sec_debug_check_crash_key(button->code, state);
 #endif
 
+#if defined(CONFIG_SEC_PRODUCT_8930)
 #if defined(CONFIG_KEYBOARD_GPIO_EXTENDED_RESUME_EVENT)
 	if (button->support_evt == SUPPORT_RESUME_KEY_EVENT) {
 		if (wakeup_gpio_num != 0 && state == 0) {
@@ -427,17 +447,18 @@ static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 		}
 	}
 #endif
+#endif
 
 	if (type == EV_ABS) {
 		if (state)
 			input_event(input, type, button->code, button->value);
 	} else {
-			input_event(input, type, button->code, !!state);
+		input_event(input, type, button->code, !!state);
 	}
-
 	input_sync(input);
 }
 
+#if defined (CONFIG_SEC_PRODUCT_8930)
 #if defined(CONFIG_KEYBOARD_GPIO_EXTENDED_RESUME_EVENT)
 static void gpio_keys_gpio_force_report_event(struct gpio_button_data *bdata, int state)
 {
@@ -459,6 +480,7 @@ static void gpio_keys_gpio_force_report_event(struct gpio_button_data *bdata, in
 	}
 	input_sync(input);
 }
+#endif
 #endif
 
 static void gpio_keys_gpio_work_func(struct work_struct *work)
@@ -679,8 +701,6 @@ static int gpio_keys_open(struct input_dev *input)
 hall_sensor_error:
 
 #endif
-
-
 	return ddata->enable ? ddata->enable(input->dev.parent) : 0;
 }
 
@@ -992,8 +1012,6 @@ static int __devinit gpio_keys_probe(struct platform_device *pdev)
 	}
 	input_sync(input);
 
-
-
 	device_init_wakeup(&pdev->dev, wakeup);
 
 	return 0;
@@ -1064,8 +1082,11 @@ static int gpio_keys_resume(struct device *dev)
 {
 	struct gpio_keys_drvdata *ddata = dev_get_drvdata(dev);
 	int i;
+
+#if defined(CONFIG_SEC_PRODUCT_8930)
 #if defined(CONFIG_KEYBOARD_GPIO_EXTENDED_RESUME_EVENT)
     struct gpio_button_data *bdata_ext;
+#endif
 #endif
 
 	for (i = 0; i < ddata->n_buttons; i++) {
@@ -1078,6 +1099,7 @@ static int gpio_keys_resume(struct device *dev)
 	}
 	input_sync(ddata->input);
 
+#if defined(CONFIG_SEC_PRODUCT_8930)
 #if defined(CONFIG_KEYBOARD_GPIO_EXTENDED_RESUME_EVENT)
 	for (i = 0; i < ddata->n_buttons; i++) {
 		bdata_ext = &ddata->data[i];
@@ -1102,6 +1124,8 @@ static int gpio_keys_resume(struct device *dev)
 		}
 	}
 #endif
+#endif
+
 
 	return 0;
 }
@@ -1113,7 +1137,7 @@ static struct platform_driver gpio_keys_device_driver = {
 	.probe		= gpio_keys_probe,
 	.remove		= __devexit_p(gpio_keys_remove),
 	.driver		= {
-		.name	= "sec_keys",
+		.name	= "gpio-keys",
 		.owner	= THIS_MODULE,
 		.pm	= &gpio_keys_pm_ops,
 		.of_match_table = gpio_keys_of_match,

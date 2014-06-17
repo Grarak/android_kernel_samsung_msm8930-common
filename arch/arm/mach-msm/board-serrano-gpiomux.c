@@ -145,6 +145,7 @@ static struct gpiomux_setting wcnss_5wire_active_cfg = {
 	.pull = GPIOMUX_PULL_DOWN,
 };
 
+/*
 static struct gpiomux_setting atmel_resout_sus_cfg = {
 	.func = GPIOMUX_FUNC_GPIO,
 	.drv = GPIOMUX_DRV_6MA,
@@ -168,7 +169,7 @@ static struct gpiomux_setting atmel_ldo_en_act_cfg = {
 	.drv = GPIOMUX_DRV_6MA,
 	.pull = GPIOMUX_PULL_DOWN,
 };
-
+*/
 static struct gpiomux_setting atmel_int_act_cfg = {
 	.func = GPIOMUX_FUNC_GPIO,
 	.drv = GPIOMUX_DRV_8MA,
@@ -259,13 +260,30 @@ static struct gpiomux_setting hdmi_active_5_cfg = {
 #endif
 #endif
 
-#if defined(CONFIG_MACH_SERRANO_EUR_LTE) || defined(CONFIG_MACH_SERRANO_EUR_3G)
+#if defined(CONFIG_MACH_SERRANO_EUR_LTE) || \
+	defined(CONFIG_MACH_SERRANO_EUR_3G)  || \
+	defined(CONFIG_MACH_SERRANO_ATT) || \
+	defined(CONFIG_MACH_SERRANO_USC) || \
+	defined(CONFIG_MACH_SERRANO_KOR_LTE) || \
+	defined(CONFIG_MACH_SERRANO_VZW) || \
+	defined(CONFIG_MACH_SERRANO_SPR) || \
+	defined(CONFIG_MACH_SERRANO_LRA)
 static struct gpiomux_setting nc_cfg = {
         .func = GPIOMUX_FUNC_GPIO,
         .drv = GPIOMUX_DRV_2MA,
         .pull = GPIOMUX_PULL_DOWN,
+		.dir = GPIOMUX_IN,
 };
-#endif 
+#endif
+
+#if defined(CONFIG_MACH_SERRANO_SPR)
+static struct gpiomux_setting pin68_cfg = {
+        .func = GPIOMUX_FUNC_GPIO,
+        .drv = GPIOMUX_DRV_2MA,
+        .pull = GPIOMUX_PULL_NONE,
+	 .dir = GPIOMUX_IN,
+};
+#endif
 
 static struct gpiomux_setting sitar_reset = {
 	.func = GPIOMUX_FUNC_GPIO,
@@ -290,7 +308,7 @@ static struct gpiomux_setting mhl_active_1_cfg = {
 #endif
 
 
-#ifdef CONFIG_MACH_SERRANO_EUR_LTE
+#if defined(CONFIG_MACH_SERRANO_EUR_LTE) || defined(CONFIG_MACH_SERRANO_KOR_LTE)
 static struct msm_gpiomux_config nc_configs[] __initdata = {
 	{
                 .gpio = 40,
@@ -392,7 +410,121 @@ static struct msm_gpiomux_config nc_configs[] __initdata = {
 	},
 };
 #endif
+#if defined(CONFIG_MACH_SERRANO_ATT) || \
+	defined(CONFIG_MACH_SERRANO_USC) || \
+	defined(CONFIG_MACH_SERRANO_VZW) || \
+	defined(CONFIG_MACH_SERRANO_SPR) || \
+	defined(CONFIG_MACH_SERRANO_LRA)
+static struct msm_gpiomux_config nc_configs[] __initdata = {
+#if defined(CONFIG_MACH_SERRANO_USC) || defined (CONFIG_MACH_SERRANO_SPR)
+        {
+                .gpio = 0,
+                .settings = {
+                        [GPIOMUX_SUSPENDED] = &nc_cfg,
+                },
+        },
+#endif
+	{
+		.gpio = 15,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &nc_cfg,
+		},
+	},
+	{
+		.gpio = 73,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &nc_cfg,
+		},
+	},
+	{
+		.gpio = 89,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &nc_cfg,
+		},
+	},
+#if defined (CONFIG_MACH_SERRANO_SPR)
+	{
+		.gpio = 110,
+		.settings = {
+				[GPIOMUX_SUSPENDED] = &nc_cfg,
+		},
+	},
+	{
+		.gpio = 111,
+		.settings = {
+				[GPIOMUX_SUSPENDED] = &nc_cfg,
+		},
+	},
+	{
+		.gpio = 116,
+		.settings = {
+				[GPIOMUX_SUSPENDED] = &nc_cfg,
+		},
+	},
+	{
+		.gpio = 121,
+		.settings = {
+				[GPIOMUX_SUSPENDED] = &nc_cfg,
+		},
+	},
+	{
+		.gpio = 129,
+		.settings = {
+				[GPIOMUX_SUSPENDED] = &nc_cfg,
+		},
+	},
+	{
+		.gpio = 131,
+		.settings = {
+				[GPIOMUX_SUSPENDED] = &nc_cfg,
+		},
+	},
+	{
+		.gpio = 132,
+		.settings = {
+				[GPIOMUX_SUSPENDED] = &nc_cfg,
+		},
+	},
+	{
+		.gpio = 133,
+		.settings = {
+				[GPIOMUX_SUSPENDED] = &nc_cfg,
+		},
+	},
+	{
+		.gpio = 136,
+		.settings = {
+				[GPIOMUX_SUSPENDED] = &nc_cfg,
+		},
+	},
+	{
+		.gpio = 146,
+		.settings = {
+				[GPIOMUX_SUSPENDED] = &nc_cfg,
+		},
+	},
+	{
+		.gpio = 147,
+		.settings = {
+				[GPIOMUX_SUSPENDED] = &nc_cfg,
+		},
+	},
+	{
+		.gpio = 148,
+		.settings = {
+				[GPIOMUX_SUSPENDED] = &nc_cfg,
+		},
+	},
+	{
+		.gpio = 68,
+		.settings = {
+				[GPIOMUX_SUSPENDED] = &pin68_cfg,
+		},
+	},
+#endif
 
+};
+#endif
 #if defined(CONFIG_KS8851) || defined(CONFIG_KS8851_MODULE)
 static struct msm_gpiomux_config msm8960_ethernet_configs[] = {
 	{
@@ -441,7 +573,7 @@ static struct msm_gpiomux_config msm8960_gsbi_configs[] __initdata = {
 		},
 	},
 #endif
-#ifndef CONFIG_SLIMBUS_MSM_CTRL	
+#ifndef CONFIG_SLIMBUS_MSM_CTRL
 	{
 		.gpio      = 36,		/* GSBI1 QUP SPI_CS_N */
 		.settings = {
@@ -456,7 +588,7 @@ static struct msm_gpiomux_config msm8960_gsbi_configs[] __initdata = {
 			[GPIOMUX_ACTIVE] = &gsbi1,
 		},
 	},
-#endif /* CONFIG_SLIMBUS_MSM_CTRL*/	
+#endif /* CONFIG_SLIMBUS_MSM_CTRL*/
 
 
 #ifdef CONFIG_2MIC_QUP_I2C
@@ -517,7 +649,7 @@ static struct msm_gpiomux_config msm8960_gsbi_configs[] __initdata = {
 			[GPIOMUX_SUSPENDED] = &gsbi5,
 		},
 	},
-			
+
 	{
 		.gpio      = 44,	/* GSBI12 I2C QUP SDA */
 		.settings = {
@@ -535,7 +667,7 @@ static struct msm_gpiomux_config msm8960_gsbi_configs[] __initdata = {
 		.settings = {
 			[GPIOMUX_SUSPENDED] = &gsbi9,
 		},
-	},		
+	},
 	{
 		.gpio      = 45,	/* GSBI12 I2C QUP SCL */
 		.settings = {
@@ -857,20 +989,6 @@ static struct msm_gpiomux_config msm8960_atmel_configs[] __initdata = {
 			[GPIOMUX_SUSPENDED] = &atmel_int_sus_cfg,
 		},
 	},
-	{	/* TS LDO ENABLE */
-		.gpio = 50,
-		.settings = {
-			[GPIOMUX_ACTIVE]    = &atmel_ldo_en_act_cfg,
-			[GPIOMUX_SUSPENDED] = &atmel_ldo_en_sus_cfg,
-		},
-	},
-	{	/* TS RESOUT */
-		.gpio = 52,
-		.settings = {
-			[GPIOMUX_ACTIVE]    = &atmel_resout_act_cfg,
-			[GPIOMUX_SUSPENDED] = &atmel_resout_sus_cfg,
-		},
-	},
 };
 
 static struct gpiomux_setting gpio_keys_config = {
@@ -1082,7 +1200,7 @@ static struct gpiomux_setting sd_det_line = {
 
 static struct msm_gpiomux_config msm8930_sd_det_config[] __initdata = {
 	{
-		.gpio = GPIO_SD_CARD_DET_N,	// SD Card Detect Line 
+		.gpio = GPIO_SD_CARD_DET_N,	// SD Card Detect Line
 		.settings = {
 			[GPIOMUX_SUSPENDED] = &sd_det_line,
 			[GPIOMUX_ACTIVE] = &sd_det_line,
@@ -1106,6 +1224,32 @@ static struct msm_gpiomux_config msm8930_gyro_int_config[] __initdata = {
 		},
 	},
 };
+
+#if defined(CONFIG_MACH_SERRANO_EUR_LTE) || defined(CONFIG_MACH_SERRANO_ATT) || defined(CONFIG_MACH_SERRANO_SPR) || defined(CONFIG_MACH_SERRANO_VZW) || defined(CONFIG_MACH_SERRANO_USC) || defined(CONFIG_MACH_SERRANO_LRA)
+static struct gpiomux_setting nfc_susp = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_DOWN,
+	.dir =  GPIOMUX_OUT_LOW,
+};
+
+static struct gpiomux_setting nfc_act = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_DOWN,
+	.dir =  GPIOMUX_OUT_HIGH,
+};
+
+static struct msm_gpiomux_config msm8930_nfc_enable_config[] __initdata = {
+	{
+		.gpio = 48,	/* NFC Enable Line */
+		.settings = {
+			[GPIOMUX_ACTIVE] =  &nfc_act,
+			[GPIOMUX_SUSPENDED] = &nfc_susp,
+		},
+	},
+};
+#endif
 
 static struct msm_gpiomux_config msm_sitar_config[] __initdata = {
 	{
@@ -1258,10 +1402,13 @@ int __init msm8930_init_gpiomux(void)
 			ARRAY_SIZE(msm8930_sd_det_config));
 #endif
 
-#if defined(CONFIG_MACH_SERRANO_EUR_LTE) || defined(CONFIG_MACH_SERRANO_EUR_3G)
+#if defined(CONFIG_MACH_SERRANO_EUR_LTE) || defined(CONFIG_MACH_SERRANO_EUR_3G)  || defined(CONFIG_MACH_SERRANO_ATT) || defined(CONFIG_MACH_SERRANO_SPR) || defined(CONFIG_MACH_SERRANO_VZW) || defined(CONFIG_MACH_SERRANO_USC) || defined(CONFIG_MACH_SERRANO_LRA)
 	msm_gpiomux_install(nc_configs, ARRAY_SIZE(nc_configs));
 #endif
 
+#if defined(CONFIG_MACH_SERRANO_EUR_LTE) || defined(CONFIG_MACH_SERRANO_ATT) || defined(CONFIG_MACH_SERRANO_SPR) || defined(CONFIG_MACH_SERRANO_VZW) || defined(CONFIG_MACH_SERRANO_USC) || defined(CONFIG_MACH_SERRANO_LRA)
+	msm_gpiomux_install(msm8930_nfc_enable_config,ARRAY_SIZE(msm8930_nfc_enable_config));
+#endif
 	if (machine_is_msm8930_fluid() || machine_is_msm8930_mtp())
 		msm_gpiomux_install(msm8930_gyro_int_config,
 			ARRAY_SIZE(msm8930_gyro_int_config));

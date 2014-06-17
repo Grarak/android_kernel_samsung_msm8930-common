@@ -43,6 +43,7 @@
 #define TOTAL_VOICE_CAL_SIZE	(NUM_VOICE_CAL_BUFFERS * VOICE_CAL_BUFFER_SIZE)
 
 static struct common_data common;
+
 static int loopback_state;
 #ifdef CONFIG_SEC_DHA_SOL_MAL
 static int dha_state;
@@ -77,7 +78,6 @@ static int32_t qdsp_cvp_callback(struct apr_client_data *data, void *priv);
 static int voice_send_set_device_cmd_v2(struct voice_data *v);
 
 static int voice_send_set_loopback_enable_cmd(struct voice_data *v);
-
 
 static u16 voice_get_mvm_handle(struct voice_data *v)
 {
@@ -3532,11 +3532,13 @@ uint32_t voc_get_widevoice_enable(uint16_t session_id)
 
 int voc_get_loopback_enable(void)
 {
+	pr_debug("%s - %d\n", __func__, loopback_state);
 	return loopback_state;
 }
 
 void voc_set_loopback_enable(int loopback_enable)
 {
+	pr_debug("%s - %d\n", __func__, loopback_enable);
 	loopback_state = loopback_enable;
 }
 
@@ -3822,9 +3824,10 @@ int voc_start_voice_call(uint16_t session_id)
 				pr_err("send loopback cmd failed\n");
 				goto fail;
 			} else {
-				pr_info("send loopback cmd success\n");
+				printk("%s : send loopback enable cmd success\n", __func__);
 			}
 		}
+
 		get_sidetone_cal(&sidetone_cal_data);
 		if (v->dev_tx.port_id != RT_PROXY_PORT_001_TX &&
 			v->dev_rx.port_id != RT_PROXY_PORT_001_RX) {
@@ -3940,6 +3943,9 @@ static int voice_send_dha_data(struct voice_data *v)
 {
 	struct oem_dha_parm_send_cmd vpcm_dha_param_send_cmd;
 	int ret = 0;
+#ifdef CONFIG_MACH_M2
+	int mode = 0;
+#endif //CONFIG_MACH_M2
 	void *apr_cvp;
 	u16 cvp_handle;
 	if (v == NULL) {
@@ -3976,12 +3982,43 @@ static int voice_send_dha_data(struct voice_data *v)
 	vpcm_dha_param_send_cmd.hdr.opcode = VOICE_CMD_SET_PARAM;
 
 	vpcm_dha_param_send_cmd.dha_send.payload_address = 0 ;
+#ifdef COFIG_MACH_M2
+	vpcm_dha_param_send_cmd.dha_send.payload_size = 44;
+	vpcm_dha_param_send_cmd.dha_send.param_size = 32;
+#else
 	vpcm_dha_param_send_cmd.dha_send.payload_size = sizeof(struct oem_dha_parm_send_t);
+	vpcm_dha_param_send_cmd.dha_send.param_size = sizeof(struct voice_dha_data);
+#endif //CONFIG_MACH_M2
 	vpcm_dha_param_send_cmd.dha_send.module_id = VOICE_MODULE_DHA;
 	vpcm_dha_param_send_cmd.dha_send.param_id = VOICE_PARAM_DHA_DYNAMIC;
-	vpcm_dha_param_send_cmd.dha_send.param_size = sizeof(struct voice_dha_data);
 	vpcm_dha_param_send_cmd.dha_send.reserved = 0;
 
+#ifdef CONFIG_MACH_M2
+	mode = v->sec_dha_data.dha_mode;
+
+	if (mode == 0) {
+		vpcm_dha_param_send_cmd.dha_send.eq_mode = mode;
+		vpcm_dha_param_send_cmd.dha_send.dha_mode = mode;
+	} else if (mode == 1) {
+		vpcm_dha_param_send_cmd.dha_send.eq_mode = 0;
+		vpcm_dha_param_send_cmd.dha_send.dha_mode = mode;
+	} else if (mode == 4) {
+		vpcm_dha_param_send_cmd.dha_send.eq_mode = 1;
+		vpcm_dha_param_send_cmd.dha_send.dha_mode = 0;
+	} else if (mode == 5) {
+		vpcm_dha_param_send_cmd.dha_send.eq_mode = 2;
+		vpcm_dha_param_send_cmd.dha_send.dha_mode = 0;
+	}
+
+	vpcm_dha_param_send_cmd.dha_send.select =
+				(uint16_t)v->sec_dha_data.dha_select;
+
+	memcpy(vpcm_dha_param_send_cmd.dha_send.param,
+			v->sec_dha_data.dha_params, 24);
+
+	pr_info(" send vpcm_dha_param_send_cmd, mode = %d, select=%d\n",
+				mode, vpcm_dha_param_send_cmd.dha_send.select);
+#else
 	vpcm_dha_param_send_cmd.dha_send.dha_mode  = v->sec_dha_data.dha_mode;
 	vpcm_dha_param_send_cmd.dha_send.dha_select =
 				(uint16_t)v->sec_dha_data.dha_select;
@@ -3991,7 +4028,7 @@ static int voice_send_dha_data(struct voice_data *v)
 
 	pr_info(" send vpcm_dha_param_send_cmd, mode = %d, select=%d\n",
 				vpcm_dha_param_send_cmd.dha_send.dha_mode , vpcm_dha_param_send_cmd.dha_send.dha_select);
-
+#endif //CONFIG_MACH_M2
 	v->cvp_state = CMD_STATUS_FAIL;
 
 	dha_state = 1;
@@ -4015,13 +4052,14 @@ static int voice_send_dha_data(struct voice_data *v)
 	return ret;
 }
 
-int voice_sec_set_dha_data(uint16_t session_id, short mode,
-			short select, short *parameters)
+int voice_sec_set_dha_data(uint16_t session_id, int mode,
+			int select, short *parameters)
 {
 	struct voice_data *v = voice_get_session(session_id);
 	int ret = 0;
 	int i;
 
+	pr_debug("%s\n", __func__);
 	if (v == NULL) {
 		pr_err("%s: invalid session_id 0x%x\n", __func__, session_id);
 
@@ -4045,7 +4083,6 @@ int voice_sec_set_dha_data(uint16_t session_id, short mode,
 }
 EXPORT_SYMBOL(voice_sec_set_dha_data);
 #endif /* CONFIG_SEC_DHA_SOL_MAL*/
-
 
 static int32_t qdsp_mvm_callback(struct apr_client_data *data, void *priv)
 {
@@ -4074,7 +4111,7 @@ static int32_t qdsp_mvm_callback(struct apr_client_data *data, void *priv)
 		data->payload_size, data->opcode);
 
 	if (data->opcode == RESET_EVENTS) {
-		pr_debug("%s: Reset event received in Voice service\n",
+		pr_info("%s: Reset event received in Voice service\n",
 			 __func__);
 
 		apr_reset(c->apr_q6_mvm);
@@ -4164,7 +4201,7 @@ static int32_t qdsp_cvs_callback(struct apr_client_data *data, void *priv)
 		data->payload_size, data->opcode);
 
 	if (data->opcode == RESET_EVENTS) {
-		pr_debug("%s: Reset event received in Voice service\n",
+		pr_info("%s: Reset event received in Voice service\n",
 			 __func__);
 
 		apr_reset(c->apr_q6_cvs);
@@ -4315,7 +4352,7 @@ static int32_t qdsp_cvp_callback(struct apr_client_data *data, void *priv)
 		data->payload_size, data->opcode);
 
 	if (data->opcode == RESET_EVENTS) {
-		pr_debug("%s: Reset event received in Voice service\n",
+		pr_info("%s: Reset event received in Voice service\n",
 			 __func__);
 
 		apr_reset(c->apr_q6_cvp);
@@ -4366,12 +4403,18 @@ static int32_t qdsp_cvp_callback(struct apr_client_data *data, void *priv)
 			case VOICE_CMD_SET_PARAM:
 				rtac_make_voice_callback(RTAC_CVP, ptr,
 							data->payload_size);
+#ifndef CONFIG_SEC_DHA_SOL_MAL
+				if (loopback_state) {
+					v->cvp_state = CMD_STATUS_SUCCESS;
+					wake_up(&v->cvp_wait);
+				}
+				break;
+#else
 				if (loopback_state || dha_state) {
 					v->cvp_state = CMD_STATUS_SUCCESS;
 					wake_up(&v->cvp_wait);
 				}
 				break;
-#ifdef CONFIG_SEC_DHA_SOL_MAL
 			case VSS_ICOMMON_CMD_DHA_SET:
 				pr_err("got ACK from CVP dha set\n");
 				v->cvp_state = CMD_STATUS_SUCCESS;
@@ -4462,8 +4505,12 @@ err:
 static int __init voice_init(void)
 {
 	int rc = 0, i = 0;
+
 	loopback_state = 0;
+#ifdef CONFIG_SEC_DHA_SOL_MAL
 	dha_state = 0;
+#endif //CONFIG_SEC_DHA_SOL_MAL
+
 	memset(&common, 0, sizeof(struct common_data));
 
 	/* Allocate shared memory */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -56,10 +56,10 @@
 #define PM8917_IRQ_BASE			PM8038_IRQ_BASE
 
 #ifdef CONFIG_MFD_MAX77693
-//temp
-#define IF_PMIC_IRQ_BASE PM8917_IRQ_BASE	
-//#define IF_PMIC_IRQ_BASE		(TABLA_INTERRUPT_BASE + NR_TABLA_IRQS)  //check here
+#define IF_PMIC_IRQ_BASE PM8917_IRQ_BASE
 #endif
+
+
 /*
  * TODO: When physical 8930/PM8038 hardware becomes
  * available, replace this block with 8930/pm8038 regulator
@@ -81,10 +81,11 @@ extern struct rpm_regulator_platform_data msm_rpm_regulator_pdata __devinitdata;
 #define GPIO_VREG_ID_EXT_3P3V		2
 #endif
 
-#if defined(CONFIG_MACH_MELIUS) || defined(CONFIG_MACH_BISCOTTO)
+#if defined(CONFIG_MACH_MELIUS) || defined(CONFIG_MACH_BISCOTTO) || defined(CONFIG_MACH_GOLDEN) || defined(CONFIG_MACH_LT02)
 extern int current_cable_type;
 extern unsigned int system_rev;
 #endif
+
 extern struct regulator_init_data msm8930_pm8038_saw_regulator_core0_pdata;
 extern struct regulator_init_data msm8930_pm8038_saw_regulator_core1_pdata;
 extern struct regulator_init_data msm8930_pm8917_saw_regulator_core0_pdata;
@@ -184,8 +185,13 @@ void msm8930_pm8917_gpio_mpp_init(void);
 void msm8930_mdp_writeback(struct memtype_reserve *reserve_table);
 void __init msm8930_init_gpu(void);
 void __init msm8960_init_battery(void);
+void __init configure_8930_sglte_regulator(void);
 
 int msm8960_get_cable_status(void);
+
+#if defined(CONFIG_TOUCHSCREEN_CYPRESS_TMA46X)
+void __init board_tsp_init(void);
+#endif
 
 #ifdef CONFIG_SAMSUNG_LPM_MODE
 extern int poweroff_charging;
@@ -214,5 +220,3 @@ extern int poweroff_charging;
 
 extern struct msm_rtb_platform_data msm8930_rtb_pdata;
 extern struct msm_cache_dump_platform_data msm8930_cache_dump_pdata;
-
-extern int gpio_rev(unsigned int);

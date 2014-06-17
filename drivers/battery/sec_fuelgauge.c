@@ -10,7 +10,6 @@
  * published by the Free Software Foundation.
  */
 #include <linux/battery/sec_fuelgauge.h>
-
 static struct device_attribute sec_fg_attrs[] = {
 	SEC_FG_ATTR(reg),
 	SEC_FG_ATTR(data),
@@ -49,28 +48,36 @@ static void sec_fg_get_atomic_capacity(
 				struct sec_fuelgauge_info *fuelgauge,
 				union power_supply_propval *val)
 {
-	if (fuelgauge->pdata->capacity_calculation_type &
-		SEC_FUELGAUGE_CAPACITY_TYPE_ATOMIC) {
-		if (fuelgauge->capacity_old < val->intval)
-			val->intval = fuelgauge->capacity_old + 1;
-		else if (fuelgauge->capacity_old > val->intval)
-			val->intval = fuelgauge->capacity_old - 1;
+#if 0
+	if (fuelgauge->capacity_old < val->intval)
+		val->intval = fuelgauge->capacity_old + 1;
+	else if (fuelgauge->capacity_old > val->intval)
+		val->intval = fuelgauge->capacity_old - 1;
+#endif
+	int value = 0;
+
+	dev_info(&fuelgauge->client->dev,
+			"%s: old : %d, current : %d\n",
+			__func__, fuelgauge->capacity_old, val->intval);
+	if(fuelgauge->capacity_old > val->intval) {
+		value = (int)fuelgauge->capacity_old - val->intval;
+	}
+	else {
+		value = val->intval - (int)fuelgauge->capacity_old;
 	}
 
-	/* keep SOC stable in abnormal status */
-	if (fuelgauge->pdata->capacity_calculation_type &
-		SEC_FUELGAUGE_CAPACITY_TYPE_SKIP_ABNORMAL) {
-		if ((fuelgauge->is_charging &&
-			fuelgauge->capacity_old > val->intval) ||
-			(!fuelgauge->is_charging &&
-			fuelgauge->capacity_old < val->intval)) {
+	if(value >= 10) {
+		/* is in the quickstart? */
+		if(!fuelgauge->is_reset) {
 			dev_err(&fuelgauge->client->dev,
-				"%s: abnormal capacity (old %d : new %d)\n",
-				__func__, fuelgauge->capacity_old, val->intval);
-			val->intval = fuelgauge->capacity_old;
+					"%s: SOC error panic\n", __func__);
+			if (!sec_hal_fg_get_property(fuelgauge->client,
+						POWER_SUPPLY_PROP_MANUFACTURER, val))
+				return;
 		}
+		else
+			fuelgauge->is_reset = false;
 	}
-
 	/* updated old capacity */
 	fuelgauge->capacity_old = val->intval;
 }
@@ -116,10 +123,10 @@ static int sec_fg_get_property(struct power_supply *psy,
 
 			/* check whether doing the wake_unlock */
 			if ((val->intval > fuelgauge->pdata->fuel_alert_soc) &&
-				fuelgauge->is_fuel_alerted) {
+					fuelgauge->is_fuel_alerted) {
 				wake_unlock(&fuelgauge->fuel_alert_wake_lock);
 				sec_hal_fg_fuelalert_init(fuelgauge->client,
-					fuelgauge->pdata->fuel_alert_soc);
+						fuelgauge->pdata->fuel_alert_soc);
 			}
 
 			/* (Only for atomic capacity)
@@ -137,9 +144,9 @@ static int sec_fg_get_property(struct power_supply *psy,
 			}
 
 			if (fuelgauge->pdata->capacity_calculation_type &
-				(SEC_FUELGAUGE_CAPACITY_TYPE_ATOMIC |
-				 SEC_FUELGAUGE_CAPACITY_TYPE_SKIP_ABNORMAL))
+					SEC_FUELGAUGE_CAPACITY_TYPE_ATOMIC)	{
 				sec_fg_get_atomic_capacity(fuelgauge, val);
+			}
 		}
 		break;
 	default:
@@ -216,6 +223,7 @@ static int sec_fg_set_property(struct power_supply *psy,
 			fuelgauge->is_charging = true;
 	case POWER_SUPPLY_PROP_CAPACITY:
 		if (val->intval == SEC_FUELGAUGE_CAPACITY_TYPE_RESET) {
+			fuelgauge->is_reset = true;
 			if (!sec_hal_fg_reset(fuelgauge->client))
 				return -EINVAL;
 			else
@@ -344,7 +352,6 @@ static int __devinit sec_fuelgauge_probe(struct i2c_client *client,
 	struct i2c_adapter *adapter = to_i2c_adapter(client->dev.parent);
 	struct sec_fuelgauge_info *fuelgauge;
 	int ret = 0;
-	bool fuelalert_init_ret = false;
 	union power_supply_propval raw_soc_val;
 
 	dev_dbg(&client->dev,
@@ -376,6 +383,7 @@ static int __devinit sec_fuelgauge_probe(struct i2c_client *client,
 	sec_hal_fg_get_property(fuelgauge->client,
 			POWER_SUPPLY_PROP_CAPACITY, &raw_soc_val);
 	raw_soc_val.intval /= 10;
+	fuelgauge->is_reset = false;
 	if(raw_soc_val.intval > fuelgauge->pdata->capacity_max)
 		sec_fg_calculate_dynamic_scale(fuelgauge);
 
@@ -421,10 +429,8 @@ static int __devinit sec_fuelgauge_probe(struct i2c_client *client,
 
 	fuelgauge->is_fuel_alerted = false;
 	if (fuelgauge->pdata->fuel_alert_soc >= 0) {
-		fuelalert_init_ret =
-			sec_hal_fg_fuelalert_init(fuelgauge->client,
-					fuelgauge->pdata->fuel_alert_soc);
-		if (fuelalert_init_ret)
+		if (sec_hal_fg_fuelalert_init(fuelgauge->client,
+			fuelgauge->pdata->fuel_alert_soc))
 			wake_lock_init(&fuelgauge->fuel_alert_wake_lock,
 				WAKE_LOCK_SUSPEND, "fuel_alerted");
 		else {
@@ -443,6 +449,23 @@ static int __devinit sec_fuelgauge_probe(struct i2c_client *client,
 			"%s : Failed to create_attrs\n", __func__);
 		goto err_irq;
 	}
+	pr_info("%s: fg_irq: %d, capacity_max: %d, "
+			"cpacity_max_margin: %d, capacity_min: %d,"
+			"calculation_type: 0x%x, fuel_alert_soc: %d,\n"
+			"repeated_fuelalert: %d, RCOMP0: 0x%x,"
+			"RCOMP_charging: 0x%x, temp_cohot: %d,"
+			"temp_cocold: %d, is_using_model_data: %d,"
+			"type_str: %s,\n", __func__, fuelgauge->pdata->fg_irq,
+			fuelgauge->pdata->capacity_max, fuelgauge->pdata->capacity_max_margin,
+			fuelgauge->pdata->capacity_min, fuelgauge->pdata->capacity_calculation_type,
+			fuelgauge->pdata->fuel_alert_soc, fuelgauge->pdata->repeated_fuelalert,
+			get_battery_data(fuelgauge).RCOMP0,
+			get_battery_data(fuelgauge).RCOMP_charging,
+			get_battery_data(fuelgauge).temp_cohot,
+			get_battery_data(fuelgauge).temp_cocold,
+			get_battery_data(fuelgauge).is_using_model_data,
+			get_battery_data(fuelgauge).type_str
+		   );
 
 	dev_dbg(&client->dev,
 		"%s: SEC Fuelgauge Driver Loaded\n", __func__);
@@ -451,8 +474,7 @@ static int __devinit sec_fuelgauge_probe(struct i2c_client *client,
 err_irq:
 	if (fuelgauge->pdata->fg_irq)
 		free_irq(fuelgauge->pdata->fg_irq, fuelgauge);
-	if (fuelalert_init_ret)
-		wake_lock_destroy(&fuelgauge->fuel_alert_wake_lock);
+	wake_lock_destroy(&fuelgauge->fuel_alert_wake_lock);
 err_supply_unreg:
 	power_supply_unregister(&fuelgauge->psy_fg);
 err_free:

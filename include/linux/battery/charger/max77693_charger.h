@@ -161,4 +161,10 @@ enum {
 	POWER_SUPPLY_VBUS_OVLO,
 	POWER_SUPPLY_VBUS_GOOD,
 };
+
+extern sec_battery_platform_data_t sec_battery_pdata;
+
+struct sec_chg_info {
+	bool dummy;
+};
 #endif

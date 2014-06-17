@@ -91,7 +91,7 @@ static inline int buf_get_pages(void *addr, int sz, int nr_pages, int access,
 	int n = -1, err = 0;
 
 	VERIFY(err, 0 != access_ok(access ? VERIFY_WRITE : VERIFY_READ,
-					(void __user *)start, len));
+			      (void __user *)start, len));
 	if (err)
 		goto bail;
 	VERIFY(err, 0 != (vma = find_vma(current->mm, start)));
@@ -162,8 +162,8 @@ static void free_mem(struct fastrpc_buf *buf)
 {
 	struct fastrpc_apps *me = &gfa;
 
-	if (!IS_ERR_OR_NULL(buf->handle)) {
-		if (!IS_ERR_OR_NULL(buf->virt)) {
+	if (buf->handle) {
+		if (buf->virt) {
 			ion_unmap_kernel(me->iclient, buf->handle);
 			buf->virt = 0;
 		}
@@ -183,8 +183,8 @@ static int alloc_mem(struct fastrpc_buf *buf)
 	VERIFY(err, 0 == IS_ERR_OR_NULL(buf->handle));
 	if (err)
 		goto bail;
-	buf->virt = ion_map_kernel(clnt, buf->handle);
-	VERIFY(err, 0 == IS_ERR_OR_NULL(buf->virt));
+	buf->virt = 0;
+	VERIFY(err, 0 != (buf->virt = ion_map_kernel(clnt, buf->handle)));
 	if (err)
 		goto bail;
 	VERIFY(err, 0 != (sg = ion_sg_table(clnt, buf->handle)));
@@ -296,9 +296,6 @@ static int get_page_list(uint32_t kernel, uint32_t sc, remote_arg_t *pra,
 		list[i].num = 0;
 		list[i].pgidx = 0;
 		len = pra[i].buf.len;
-		VERIFY(err, len >= 0);
-		if (err)
-			goto bail;
 		if (!len)
 			continue;
 		buf = pra[i].buf.pv;
@@ -356,6 +353,7 @@ static int get_args(uint32_t kernel, uint32_t sc, remote_arg_t *pra,
 	args = (void *)((char *)pbuf->virt + used);
 	rlen = pbuf->size - used;
 	for (i = 0; i < inbufs + outbufs; ++i) {
+		int num;
 
 		rpra[i].buf.len = pra[i].buf.len;
 		if (!rpra[i].buf.len)
@@ -382,12 +380,18 @@ static int get_args(uint32_t kernel, uint32_t sc, remote_arg_t *pra,
 			args = pbuf->virt;
 			rlen = pbuf->size;
 		}
-		list[i].num = 1;
-		pages[list[i].pgidx].addr =
-			buf_page_start((void *)(pbuf->phys +
-						 (pbuf->size - rlen)));
-		pages[list[i].pgidx].size =
-			buf_page_size(pra[i].buf.len);
+		num = buf_num_pages(args, pra[i].buf.len);
+		if (pbuf == ibuf) {
+			list[i].num = num;
+			list[i].pgidx = 0;
+		} else {
+			list[i].num = 1;
+			pages[list[i].pgidx].addr =
+				buf_page_start((void *)(pbuf->phys +
+							 (pbuf->size - rlen)));
+			pages[list[i].pgidx].size =
+				buf_page_size(pra[i].buf.len);
+		}
 		if (i < inbufs) {
 			if (!kernel) {
 				VERIFY(err, 0 == copy_from_user(args,
@@ -618,28 +622,27 @@ static int alloc_dev(struct fastrpc_device **dev)
 static int get_dev(struct fastrpc_apps *me, struct fastrpc_device **rdev)
 {
 	struct hlist_head *head;
-	struct fastrpc_device *dev = 0, *devfree = 0;
-	struct hlist_node *pos, *n;
+	struct fastrpc_device *dev = 0;
+	struct hlist_node *n;
 	uint32_t h = hash_32(current->tgid, RPC_HASH_BITS);
 	int err = 0;
 
 	spin_lock(&me->hlock);
 	head = &me->htbl[h];
-	hlist_for_each_entry_safe(dev, pos, n, head, hn) {
+	hlist_for_each_entry(dev, n, head, hn) {
 		if (dev->tgid == current->tgid) {
 			hlist_del(&dev->hn);
-			devfree = dev;
 			break;
 		}
 	}
 	spin_unlock(&me->hlock);
-	VERIFY(err, devfree != 0);
+	VERIFY(err, dev != 0);
 	if (err)
 		goto bail;
-	*rdev = devfree;
+	*rdev = dev;
  bail:
 	if (err) {
-		free_dev(devfree);
+		free_dev(dev);
 		err = alloc_dev(rdev);
 	}
 	return err;
@@ -764,23 +767,22 @@ static void cleanup_current_dev(void)
 	struct fastrpc_apps *me = &gfa;
 	uint32_t h = hash_32(current->tgid, RPC_HASH_BITS);
 	struct hlist_head *head;
-	struct hlist_node *pos, *n;
-	struct fastrpc_device *dev, *devfree;
+	struct hlist_node *pos;
+	struct fastrpc_device *dev;
 
  rnext:
-	devfree = dev = 0;
+	dev = 0;
 	spin_lock(&me->hlock);
 	head = &me->htbl[h];
-	hlist_for_each_entry_safe(dev, pos, n, head, hn) {
+	hlist_for_each_entry(dev, pos, head, hn) {
 		if (dev->tgid == current->tgid) {
 			hlist_del(&dev->hn);
-			devfree = dev;
 			break;
 		}
 	}
 	spin_unlock(&me->hlock);
-	if (devfree) {
-		free_dev(devfree);
+	if (dev) {
+		free_dev(dev);
 		goto rnext;
 	}
 	return;

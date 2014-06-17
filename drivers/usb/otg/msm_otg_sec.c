@@ -20,6 +20,7 @@
 #include <linux/i2c/fsa9485.h>
 #endif
 
+#include <linux/usb/msm_hsusb.h>
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
@@ -98,8 +99,10 @@ static void msm_otg_host_notify(struct msm_otg *motg, int on)
 	if (on)
 		msm_otg_host_phy_tune(motg, 0x33, 0x14);
 
-	if (motg->smartdock)
+	if (motg->smartdock) {
+		motg->ndev.state = NOTIFY_HOST_REMOVE;
 		return;
+	}
 
 	if (on) {
 		motg->ndev.mode = NOTIFY_HOST_MODE;
@@ -393,6 +396,6 @@ void sec_otg_set_id_state(bool enable)
 		pr_info("msm_otg_set_id_state : in LPM\n");
 		pm_runtime_resume(phy->dev);
 	}
-	msm_otg_set_id_state(enable ? 0 : 1);
+
 }
 EXPORT_SYMBOL_GPL(sec_otg_set_id_state);

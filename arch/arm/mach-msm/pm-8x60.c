@@ -56,12 +56,16 @@
 #include "pm-boot.h"
 #include <mach/event_timer.h>
 #include <linux/cpu_pm.h>
-#ifdef CONFIG_SEC_DEBUG
+#if defined(CONFIG_SEC_DEBUG)
 #include <mach/sec_debug.h>
 #endif
-
-#include <mach/gpiomux.h>
 #include <linux/regulator/consumer.h>
+#include <mach/gpiomux.h>
+#include <linux/mfd/pm8xxx/pm8921.h>
+
+#ifdef CONFIG_SEC_GPIO_DVS
+#include <linux/secgpio_dvs.h>
+#endif
 
 /******************************************************************************
  * Debug Definitions
@@ -77,7 +81,6 @@ enum {
 	MSM_PM_DEBUG_IDLE = BIT(6),
 	MSM_PM_DEBUG_IDLE_LIMITS = BIT(7),
 	MSM_PM_DEBUG_HOTPLUG = BIT(8),
-	MSM_PM_DEBUG_GPIO = BIT(9),
 };
 
 static int msm_pm_debug_mask = 1;
@@ -89,6 +92,7 @@ static int msm_pm_retention_tz_call;
 /******************************************************************************
  * Sleep Modes and Parameters
  *****************************************************************************/
+static int spc_attempts;
 enum {
 	MSM_PM_MODE_ATTR_SUSPEND,
 	MSM_PM_MODE_ATTR_IDLE,
@@ -182,7 +186,7 @@ static ssize_t msm_pm_mode_attr_store(struct kobject *kobj,
 	struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	int ret = -EINVAL;
-	int i;
+	int i, j;
 
 	for (i = 0; i < MSM_PM_SLEEP_MODE_NR; i++) {
 		struct kernel_param kp;
@@ -204,10 +208,20 @@ static ssize_t msm_pm_mode_attr_store(struct kobject *kobj,
 			ret = param_set_byte(buf, &kp);
 		} else if (!strcmp(attr->attr.name,
 			msm_pm_mode_attr_labels[MSM_PM_MODE_ATTR_IDLE])) {
-			kp.arg = &mode->idle_enabled;
-			ret = param_set_byte(buf, &kp);
+			j = MSM_PM_SLEEP_MODE_POWER_COLLAPSE_STANDALONE;
+			if (!strcmp(kobj->name, msm_pm_sleep_mode_labels[j])) {
+				if (buf[0] == '1') {
+					spc_attempts++;
+					pr_err("%s: spc is blocked (%d) from [%s]\n",
+						__func__, spc_attempts,
+						current->comm);
+				}
+				ret = 0;
+			} else {
+				kp.arg = &mode->idle_enabled;
+				ret = param_set_byte(buf, &kp);
+			}
 		}
-
 		break;
 	}
 
@@ -563,7 +577,7 @@ static bool __ref msm_pm_spm_power_collapse(
 #ifdef CONFIG_VFP
 	vfp_pm_suspend();
 #endif
-#ifdef CONFIG_SEC_DEBUG
+#if defined(CONFIG_SEC_DEBUG)
 	secdbg_sched_msg("+pc(I:%d,R:%d)", from_idle, notify_rpm);
 	collapsed = msm_pm_l2x0_power_collapse();
 	secdbg_sched_msg("-pc(%d)", collapsed);
@@ -1020,11 +1034,6 @@ void msm_pm_cpu_enter_lowpower(unsigned int cpu)
 	else
 		msm_pm_swfi();
 }
-static int msm_pm_prepare_late(void)
-{
-	regulator_debug_print_enabled();
-	return 0;
-}
 
 static int msm_pm_enter(suspend_state_t state)
 {
@@ -1064,10 +1073,6 @@ static int msm_pm_enter(suspend_state_t state)
 			pr_info("%s: power collapse\n", __func__);
 
 		clock_debug_print_enabled();
-
-
-		if (MSM_PM_DEBUG_GPIO & msm_pm_debug_mask)
-			msm_gpio_print_enabled();
 
 #ifdef CONFIG_MSM_SLEEP_TIME_OVERRIDE
 		if (msm_pm_sleep_time_override > 0) {
@@ -1121,6 +1126,38 @@ enter_exit:
 	if (MSM_PM_DEBUG_SUSPEND & msm_pm_debug_mask)
 		pr_info("%s: return\n", __func__);
 
+	return 0;
+}
+
+enum {
+	MSM_PM_SECDEBUG_LEVLE1 = BIT(0),
+};
+
+static int msm_pm_secdebug_mask;
+module_param_named(
+	secdebug, msm_pm_secdebug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP
+);
+
+static int msm_pm_prepare_late(void)
+{
+	if (msm_pm_secdebug_mask & MSM_PM_SECDEBUG_LEVLE1) {
+		regulator_showall_enabled();
+		msm_gpio_print_enabled();
+		pm_gpio_dbg_showall(1);
+		pm_mpp_dbg_showall(1);
+	} else {
+		pm_gpio_dbg_showall(0);
+		pm_mpp_dbg_showall(0);
+	}
+
+#ifdef CONFIG_SEC_GPIO_DVS
+	/************************ Caution !!! ****************************/
+	/* This function must be located in appropriate SLEEP position
+	 * in accordance with the specification of each BB vendor.
+	 */
+	/************************ Caution !!! ****************************/
+	gpio_dvs_check_sleepgpio();
+#endif
 	return 0;
 }
 
@@ -1296,14 +1333,17 @@ static int __init msm_pm_setup_saved_state(void)
 	msm_saved_state_phys =
 		allocate_contiguous_ebi_nomap(CPU_SAVED_STATE_SIZE *
 					      num_possible_cpus(), 4);
-	if (!msm_saved_state_phys)
+	if (!msm_saved_state_phys) {
+		pgd_free(&init_mm, pc_pgd);
 		return -ENOMEM;
+	}
 	msm_saved_state = ioremap_nocache(msm_saved_state_phys,
 					  CPU_SAVED_STATE_SIZE *
 					  num_possible_cpus());
-	if (!msm_saved_state)
+	if (!msm_saved_state) {
+		pgd_free(&init_mm, pc_pgd);
 		return -ENOMEM;
-
+	}
 	/* It is remotely possible that the code in msm_pm_collapse_exit()
 	 * which turns on the MMU with this mapping is in the
 	 * next even-numbered megabyte beyond the

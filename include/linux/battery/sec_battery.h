@@ -56,7 +56,6 @@ struct sec_battery_info {
 	int voltage_ocv;		/* open circuit voltage (mV) */
 	int current_now;		/* current (mA) */
 	int current_avg;		/* average current (mA) */
-	int current_max;		/* input current limit (mA) */
 	int current_adc;
 
 	unsigned int capacity;			/* SOC (%) */
@@ -67,7 +66,10 @@ struct sec_battery_info {
 	/* keep awake until monitor is done */
 	struct wake_lock monitor_wake_lock;
 	struct workqueue_struct *monitor_wqueue;
-	struct delayed_work monitor_work;
+	struct work_struct monitor_work;
+#ifdef CONFIG_SAMSUNG_BATTERY_FACTORY
+	struct wake_lock lpm_wake_lock;
+#endif
 	unsigned int polling_count;
 	unsigned int polling_time;
 	bool polling_in_sleep;
@@ -126,11 +128,15 @@ struct sec_battery_info {
 	int wc_enable;
 
 	/* test mode */
-	int test_mode;
+	int test_activated;
 	bool factory_mode;
 	bool slate_mode;
 
 	int siop_level;
+#if defined(CONFIG_SAMSUNG_BATTERY_ENG_TEST)
+	int stability_test;
+	int eng_not_full_status;
+#endif
 };
 
 ssize_t sec_bat_show_attrs(struct device *dev,
@@ -148,19 +154,19 @@ ssize_t sec_bat_store_attrs(struct device *dev,
 }
 
 /* event check */
-#define EVENT_NONE				(0)
+#define EVENT_NONE			(0)
 #define EVENT_2G_CALL			(0x1 << 0)
 #define EVENT_3G_CALL			(0x1 << 1)
-#define EVENT_MUSIC				(0x1 << 2)
-#define EVENT_VIDEO				(0x1 << 3)
+#define EVENT_MUSIC			(0x1 << 2)
+#define EVENT_VIDEO			(0x1 << 3)
 #define EVENT_BROWSER			(0x1 << 4)
 #define EVENT_HOTSPOT			(0x1 << 5)
 #define EVENT_CAMERA			(0x1 << 6)
 #define EVENT_CAMCORDER			(0x1 << 7)
 #define EVENT_DATA_CALL			(0x1 << 8)
-#define EVENT_WIFI				(0x1 << 9)
-#define EVENT_WIBRO				(0x1 << 10)
-#define EVENT_LTE				(0x1 << 11)
+#define EVENT_WIFI			(0x1 << 9)
+#define EVENT_WIBRO			(0x1 << 10)
+#define EVENT_LTE			(0x1 << 11)
 #define EVENT_LCD			(0x1 << 12)
 #define EVENT_GPS			(0x1 << 13)
 
@@ -174,7 +180,6 @@ enum {
 	BATT_VOL_ADC_CAL,
 	BATT_VOL_AVER,
 	BATT_VOL_ADC_AVER,
-	BATT_TEMP,
 	BATT_TEMP_ADC,
 	BATT_TEMP_AVER,
 	BATT_TEMP_ADC_AVER,
@@ -217,6 +222,7 @@ enum {
 	BATT_EVENT,
 #if defined(CONFIG_SAMSUNG_BATTERY_ENG_TEST)
 	BATT_TEST_CHARGE_CURRENT,
+	BATT_STABILITY_TEST,
 #endif
 };
 

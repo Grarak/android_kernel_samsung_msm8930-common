@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -30,6 +30,12 @@
 #include "msm_fb.h"
 #include "mdp4.h"
 atomic_t irq_cnt;
+
+static wait_queue_head_t recovery_wait;
+
+/*Below may be enabled to handle IOMMU pagefaults
+ *Needs sufficient testing*/
+#define VFE_IOMMU_FAULT_HANDLER 1
 
 #define VFE32_AXI_OFFSET 0x0050
 #define vfe32_get_ch_ping_addr(base, chn) \
@@ -433,7 +439,7 @@ static const char * const vfe32_general_cmd[] = {
 	"VFE_CMD_STOP_RECORDING_DONE",
 };
 
-static atomic_t recovery_active;
+static atomic_t recovery_active, fault_recovery;
 static uint32_t recover_irq_mask0, recover_irq_mask1;
 
 uint8_t vfe32_use_bayer_stats(struct vfe32_ctrl_type *vfe32_ctrl)
@@ -937,6 +943,8 @@ static void axi_global_reset_internal_variables(
 	unsigned long flags;
 	/* state control variables */
 	axi_ctrl->share_ctrl->start_ack_pending = FALSE;
+	axi_ctrl->share_ctrl->stop_issued = FALSE;
+	init_waitqueue_head(&recovery_wait);
 	atomic_set(&irq_cnt, 0);
 
 	spin_lock_irqsave(&axi_ctrl->share_ctrl->stop_flag_lock, flags);
@@ -958,6 +966,7 @@ static void axi_global_reset_internal_variables(
 	atomic_set(&axi_ctrl->share_ctrl->rdi0_update_ack_pending, 0);
 	atomic_set(&axi_ctrl->share_ctrl->rdi1_update_ack_pending, 0);
 	atomic_set(&axi_ctrl->share_ctrl->rdi2_update_ack_pending, 0);
+	atomic_set(&fault_recovery, 0);
 
 	/* 0 for continuous mode, 1 for snapshot mode */
 	axi_ctrl->share_ctrl->operation_mode = 0;
@@ -1170,6 +1179,7 @@ static void vfe32_reset_internal_variables(
 	vfe32_ctrl->frame_skip_pattern = 0xffffffff;
 	vfe32_ctrl->snapshot_frame_cnt = 0;
 	atomic_set(&recovery_active, 0);
+	wake_up(&recovery_wait);
 	vfe32_set_default_reg_values(vfe32_ctrl);
 }
 
@@ -1214,10 +1224,25 @@ static int axi_reset(struct axi_ctrl_t *axi_ctrl,
 	struct msm_camera_vfe_params_t vfe_params)
 {
 	int rc = 0;
+	uint8_t halt_timeout = 30;
+	pr_info("%s E", __func__);
+
 	if (vfe_params.skip_reset) {
 		axi_reset_internal_variables(axi_ctrl, vfe_params);
 		return rc;
 	}
+
+	/*If overflow recovery is in progress, wait for it to complete*/
+	CDBG("%s: Waiting for overflow recovery to complete", __func__);
+	rc = wait_event_interruptible_timeout(
+		recovery_wait,
+		(atomic_read(&recovery_active) == 0),
+		msecs_to_jiffies(halt_timeout));
+	if (!rc)
+		pr_err("%s: Timeout while recovery in progress", __func__);
+	CDBG("%s: Done waiting for overflow recovery to complete", __func__);
+	axi_ctrl->share_ctrl->stop_issued = TRUE;
+
 	axi_global_reset_internal_variables(axi_ctrl);
 	/* disable all interrupts.  vfeImaskLocal is also reset to 0
 	* to begin with. */
@@ -1251,6 +1276,7 @@ static int axi_reset(struct axi_ctrl_t *axi_ctrl,
 	msm_camera_io_w_mb(VFE_RESET_UPON_RESET_CMD,
 		axi_ctrl->share_ctrl->vfebase + VFE_GLOBAL_RESET);
 
+	pr_info("%s X", __func__);
 	return wait_for_completion_interruptible(
 			&axi_ctrl->share_ctrl->reset_complete);
 }
@@ -1580,6 +1606,9 @@ static int vfe_stats_cs_buf_init(
 
 static void vfe32_start_common(struct vfe32_ctrl_type *vfe32_ctrl)
 {
+#if defined(CONFIG_MACH_LT02_ATT) || defined(CONFIG_MACH_LT02_SPR) || defined(CONFIG_MACH_LT02_TMO) || defined (CONFIG_MACH_CANE) || defined (CONFIG_MACH_LOGANRE)
+	mdelay(30);//for avoiding camif errors,will be removed if another solution found
+#endif
 	CDBG("VFE opertaion mode = 0x%x, output mode = 0x%x\n",
 		vfe32_ctrl->share_ctrl->operation_mode,
 		vfe32_ctrl->share_ctrl->outpath.output_mode);
@@ -3578,9 +3607,6 @@ static int vfe32_proc_general(
 
 		break;
 	default:
-		if (cmd->id < 0 || cmd->id > VFE_CMD_MAX)
-			return -EINVAL;
-
 		if (cmd->length != vfe32_cmd[cmd->id].length)
 			return -EINVAL;
 
@@ -4191,6 +4217,16 @@ static void vfe32_process_reset_irq(
 
 	if (atomic_read(&recovery_active) == 1) {
 		printk("Recovery restart stream\n");
+		if (atomic_read(&fault_recovery) == 1) {
+			atomic_set(&recovery_active, 0);
+			pr_err("potential page fault occured, stop recovery & send app notification");
+			v4l2_subdev_notify(&vfe32_ctrl->subdev, NOTIFY_VFE_CAMIF_ERROR,
+					(void *)NULL);
+			vfe32_send_isp_msg(&vfe32_ctrl->subdev,
+					vfe32_ctrl->share_ctrl->vfeFrameId, MSG_ID_CAMIF_ERROR);
+			return;
+		}	
+		
 		msm_camera_io_w(0x3FFF,
 			vfe32_ctrl->share_ctrl->vfebase + VFE_BUS_CMD);
 		msm_camera_io_w(recover_irq_mask0, vfe32_ctrl->share_ctrl->vfebase + VFE_IRQ_MASK_0);
@@ -4211,6 +4247,7 @@ static void vfe32_process_reset_irq(
 		msm_camera_io_w_mb(0x4, vfe32_ctrl->share_ctrl->vfebase + 0x1E0);
 		msm_camera_io_w_mb(0x1, vfe32_ctrl->share_ctrl->vfebase + 0x1E0);
 		atomic_set(&recovery_active, 0);
+		wake_up(&recovery_wait);
 		printk("Recovery restart done\n");
 		return;
 	}
@@ -5492,6 +5529,20 @@ static void axi32_do_tasklet(unsigned long data)
 					VFE_IRQ_STATUS0_STATS_CS);
 		}
 
+		if (atomic_read(&fault_recovery) && !atomic_read(&recovery_active) &&
+		  !axi_ctrl->share_ctrl->stop_issued) {
+			pr_err("avert page fault when overflow recovery not in progress");
+			while (axi_busy_flag && halt_timeout--) {
+				if (msm_camera_io_r(axi_ctrl->share_ctrl->vfebase + VFE_AXI_STATUS) & 0x1)
+					axi_busy_flag = false;
+			}
+			msm_camera_io_w_mb(AXI_HALT_CLEAR, axi_ctrl->share_ctrl->vfebase + VFE_AXI_CMD);
+			v4l2_subdev_notify(&vfe32_ctrl->subdev, NOTIFY_VFE_CAMIF_ERROR,
+					(void *)NULL);
+			vfe32_send_isp_msg(&vfe32_ctrl->subdev,
+					vfe32_ctrl->share_ctrl->vfeFrameId, MSG_ID_CAMIF_ERROR);
+		}
+
 		if (!atomic_read(&recovery_active)) {
 		if (qcmd->vfeInterruptStatus0 &
 				VFE_IRQ_STATUS0_CAMIF_SOF_MASK) {
@@ -5546,7 +5597,8 @@ static void axi32_do_tasklet(unsigned long data)
 					VFE32_IMASK_COMMON_ERROR_ONLY_1);
 			}
 
-			if ((qcmd->vfeInterruptStatus1 & 0x3FFF00) && atomic_read(&recovery_active) == 2) {
+			if ((qcmd->vfeInterruptStatus1 & 0x3FFF00) && atomic_read(&recovery_active) == 2 &&
+			  !axi_ctrl->share_ctrl->stop_issued) {
 				while (axi_busy_flag && halt_timeout--) {
 					if (msm_camera_io_r(axi_ctrl->share_ctrl->vfebase + VFE_AXI_STATUS) & 0x1)
 						axi_busy_flag = false;
@@ -5687,8 +5739,19 @@ static irqreturn_t vfe32_parse_irq(int irq_num, void *data)
 
 	qcmd->vfeInterruptStatus0 = irq.vfeIrqStatus0;
 	qcmd->vfeInterruptStatus1 = irq.vfeIrqStatus1;
-	if ((qcmd->vfeInterruptStatus1 & 0x3FFF00) && !atomic_read(&recovery_active)) {
-		printk("Start recovery\n");
+	if (atomic_read(&fault_recovery) &&
+	  !axi_ctrl->share_ctrl->stop_issued) {
+		printk("Start fault recovery\n");
+		msm_camera_io_w(0x0, axi_ctrl->share_ctrl->vfebase + VFE_IRQ_MASK_0);
+		msm_camera_io_w((0x1 << 23), axi_ctrl->share_ctrl->vfebase + VFE_IRQ_MASK_1);
+		msm_camera_io_w(VFE_CLEAR_ALL_IRQS, axi_ctrl->share_ctrl->vfebase + VFE_IRQ_CLEAR_0);
+		msm_camera_io_w(VFE_CLEAR_ALL_IRQS, axi_ctrl->share_ctrl->vfebase + VFE_IRQ_CLEAR_1);
+		msm_camera_io_w(0x2, axi_ctrl->share_ctrl->vfebase + 0x1E0);
+		msm_camera_io_w(AXI_HALT, axi_ctrl->share_ctrl->vfebase + VFE_AXI_CMD);
+
+	} else if ((qcmd->vfeInterruptStatus1 & 0x3FFF00) && !atomic_read(&recovery_active) &&
+!axi_ctrl->share_ctrl->stop_issued) {
+		printk("Start bus overflow recovery\n");
 		recover_irq_mask0 = msm_camera_io_r(axi_ctrl->share_ctrl->vfebase + VFE_IRQ_MASK_0);
 		recover_irq_mask1 = msm_camera_io_r(axi_ctrl->share_ctrl->vfebase + VFE_IRQ_MASK_1);
 		msm_camera_io_w(0x0, axi_ctrl->share_ctrl->vfebase + VFE_IRQ_MASK_0);
@@ -6051,7 +6114,15 @@ static const struct v4l2_subdev_core_ops msm_vfe_subdev_core_ops = {
 static const struct v4l2_subdev_ops msm_vfe_subdev_ops = {
 	.core = &msm_vfe_subdev_core_ops,
 };
-
+#ifdef VFE_IOMMU_FAULT_HANDLER
+static int vfe_iommu_fault_handler(struct iommu_domain *domain,
+		struct device *dev, unsigned long iova, int flags)
+{
+    pr_err("iommu page fault has happened\n");
+    atomic_set(&fault_recovery, 1);
+    return -ENOSYS;
+}
+#endif
 int msm_axi_subdev_init(struct v4l2_subdev *sd,
 	uint8_t dual_enabled)
 {
@@ -6069,6 +6140,7 @@ int msm_axi_subdev_init(struct v4l2_subdev *sd,
 		return rc;
 	axi_ctrl->share_ctrl->dual_enabled = dual_enabled;
 	axi_ctrl->share_ctrl->lp_mode = 0;
+	atomic_set(&fault_recovery, 0);
 	spin_lock_init(&axi_ctrl->tasklet_lock);
 	INIT_LIST_HEAD(&axi_ctrl->tasklet_q);
 	spin_lock_init(&axi_ctrl->share_ctrl->sd_notify_lock);
@@ -6107,8 +6179,12 @@ int msm_axi_subdev_init(struct v4l2_subdev *sd,
 		rc = -ENODEV;
 		goto device_misc_attach_failed;
 	}
+#ifdef VFE_IOMMU_FAULT_HANDLER
+	iommu_set_fault_handler(mctl->domain,
+						 vfe_iommu_fault_handler);
+#endif	
 #endif
-	dtv_update_camera_vector_override(1);
+	//dtv_update_camera_vector_override(1);
 	msm_camio_bus_scale_cfg(
 		mctl->sdata->pdata->cam_bus_scale_table, S_INIT);
 
@@ -6195,6 +6271,7 @@ void msm_axi_subdev_release(struct v4l2_subdev *sd)
 	if (axi_ctrl->share_ctrl->axi_ref_cnt > 0)
 		return;
 
+	atomic_set(&fault_recovery, 0);	
 	axi_clear_all_interrupts(axi_ctrl->share_ctrl);
 
 	axi_ctrl->share_ctrl->dual_enabled = 0;
@@ -6217,7 +6294,7 @@ void msm_axi_subdev_release(struct v4l2_subdev *sd)
 
 	msm_camio_bus_scale_cfg(
 		pmctl->sdata->pdata->cam_bus_scale_table, S_EXIT);
-	dtv_update_camera_vector_override(0);
+	//dtv_update_camera_vector_override(0);
 }
 
 void msm_vfe_subdev_release(struct v4l2_subdev *sd)
@@ -6249,8 +6326,22 @@ int msm_axi_set_low_power_mode(struct v4l2_subdev *sd, void *arg)
 
 void axi_abort(struct axi_ctrl_t *axi_ctrl)
 {
+	int rc = 0;
 	uint8_t  axi_busy_flag = true;
 	unsigned long flags;
+	uint8_t halt_timeout = 30;
+	pr_info("%s E", __func__);
+       /*If overflow recovery is in progress, wait for it to complete*/
+	CDBG("%s: Waiting for overflow recovery to complete", __func__);
+	rc = wait_event_interruptible_timeout(
+		recovery_wait,
+		(atomic_read(&recovery_active) == 0),
+		msecs_to_jiffies(halt_timeout));
+	if (!rc)
+		pr_err("%s: Timeout while recovery in progress", __func__);
+	CDBG("%s: Done waiting for overflow recovery to complete", __func__);
+	axi_ctrl->share_ctrl->stop_issued = TRUE;
+
 	/* axi halt command. */
 
 	spin_lock_irqsave(&axi_ctrl->share_ctrl->stop_flag_lock, flags);
@@ -6284,6 +6375,7 @@ void axi_abort(struct axi_ctrl_t *axi_ctrl)
 	if (axi_ctrl->share_ctrl->sync_abort)
 		wait_for_completion_interruptible(
 			&axi_ctrl->share_ctrl->reset_complete);
+	pr_info("%s X", __func__);
 }
 
 int axi_config_buffers(struct axi_ctrl_t *axi_ctrl,
@@ -6472,6 +6564,7 @@ void axi_start(struct msm_cam_media_controller *pmctl,
 		~(VFE_OUTPUTS_RDI0|VFE_OUTPUTS_RDI1|VFE_OUTPUTS_RDI2));
 	CDBG("axi start = %d\n",
 		axi_ctrl->share_ctrl->current_mode);
+	axi_ctrl->share_ctrl->stop_issued = FALSE;
 	rc = axi_config_buffers(axi_ctrl, vfe_params);
 	if (rc < 0)
 		return;
@@ -6486,10 +6579,6 @@ void axi_start(struct msm_cam_media_controller *pmctl,
 			msm_camio_bus_scale_cfg(
 				pmctl->sdata->pdata->cam_bus_scale_table,
 				S_PREVIEW);
-		else if(axi_ctrl->share_ctrl->dual_enabled)
-			msm_camio_bus_scale_cfg(
-				pmctl->sdata->pdata->cam_bus_scale_table,
-				S_DUAL);
 		break;
 	case AXI_CMD_CAPTURE:
 	case AXI_CMD_RAW_CAPTURE:
@@ -6525,10 +6614,6 @@ void axi_start(struct msm_cam_media_controller *pmctl,
 			msm_camio_bus_scale_cfg(
 				pmctl->sdata->pdata->cam_bus_scale_table,
 				S_ZSL);
-		else if(axi_ctrl->share_ctrl->dual_enabled)
-			msm_camio_bus_scale_cfg(
-				pmctl->sdata->pdata->cam_bus_scale_table,
-				S_DUAL);
 		break;
 	case AXI_CMD_LIVESHOT:
 		if (!axi_ctrl->share_ctrl->dual_enabled)
@@ -6771,13 +6856,27 @@ void axi_start(struct msm_cam_media_controller *pmctl,
 void axi_stop(struct msm_cam_media_controller *pmctl,
 	struct axi_ctrl_t *axi_ctrl, struct msm_camera_vfe_params_t vfe_params)
 {
+	int rc = 0;
 	uint32_t reg_update = 0;
+	uint8_t halt_timeout = 30;
 	uint32_t vfe_mode =
 	axi_ctrl->share_ctrl->current_mode & ~(VFE_OUTPUTS_RDI0|
 		VFE_OUTPUTS_RDI1|VFE_OUTPUTS_RDI2);
 /*Start : shchang@qualcomm.com : 1101*/
 	int bus_vector_idx = 0;
 /*End : shchang@qualcomm.com : 1101*/
+
+	pr_info("%s E", __func__);
+       /*If overflow recovery is in progress, wait for it to complete*/
+	CDBG("%s: Waiting for overflow recovery to complete", __func__);
+	rc = wait_event_interruptible_timeout(
+		recovery_wait,
+		(atomic_read(&recovery_active) == 0),
+		msecs_to_jiffies(halt_timeout));
+	if (!rc)
+		pr_err("%s: Timeout while recovery in progress", __func__);
+	CDBG("%s: Done waiting for overflow recovery to complete", __func__);
+	axi_ctrl->share_ctrl->stop_issued = TRUE;
 
 	switch (vfe_params.cmd_type) {
 	case AXI_CMD_PREVIEW:
@@ -6862,6 +6961,7 @@ void axi_stop(struct msm_cam_media_controller *pmctl,
 	}
 	msm_camera_io_w_mb(reg_update,
 		axi_ctrl->share_ctrl->vfebase + VFE_REG_UPDATE_CMD);
+	pr_info("%s X", __func__);
 }
 
 static int msm_axi_config(struct v4l2_subdev *sd, void __user *arg)
@@ -7169,6 +7269,10 @@ static int msm_axi_config(struct v4l2_subdev *sd, void __user *arg)
 				return -EFAULT;
 		}
 		axi_abort(axi_ctrl);
+		break;
+	case CMD_AXI_STOP_RECOVERY:
+		pr_err("bus overflow recovery is stopped to avoid IOMMU page faults\n");
+		atomic_set(&fault_recovery, 1); 			
 		break;
 	default:
 		pr_err("%s Unsupported AXI configuration %x ", __func__,
@@ -7594,6 +7698,7 @@ static int __devinit vfe32_probe(struct platform_device *pdev)
 vfe32_no_resource:
 	kfree(vfe32_ctrl);
 	kfree(axi_ctrl);
+	kfree(share_ctrl);
 	return rc;
 }
 

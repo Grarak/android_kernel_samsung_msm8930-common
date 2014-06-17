@@ -51,7 +51,7 @@ bool afe_close_done[2] = {true, true};
 static int32_t afe_callback(struct apr_client_data *data, void *priv)
 {
 	if (data->opcode == RESET_EVENTS) {
-		pr_debug("q6afe: reset event = %d %d apr[%p]\n",
+		pr_info("q6afe: reset event = %d %d apr[%p]\n",
 			data->reset_event, data->reset_proc, this_afe.apr);
 		if (this_afe.apr) {
 			apr_reset(this_afe.apr);
@@ -597,16 +597,8 @@ int afe_port_start(u16 port_id, union afe_port_config *afe_config,
 			 * is L-PCM, the AFE_PORT_AUDIO_IF_CONFIG is used
 			 * to make the backward compatible.
 			 */
-			pr_debug("%s: afe_port = 0x%x. Mi2s. bitwidth = %hu"
-				" line/channel_mode = %hu\n" 
-				" channel/mono_stero = %hu,  ws = %hu"
-				" format = %hu\n", __func__, port_id,
-				afe_config->mi2s.bitwidth,
-				afe_config->mi2s.line,
-				afe_config->mi2s.channel,
-				afe_config->mi2s.ws,
-				afe_config->mi2s.format);
-
+			pr_debug("%s: afe_config->mi2s.format = %d\n", __func__,
+					 afe_config->mi2s.format);
 			if (afe_config->mi2s.format == MSM_AFE_I2S_FORMAT_LPCM)
 				config.hdr.opcode = AFE_PORT_AUDIO_IF_CONFIG;
 			else

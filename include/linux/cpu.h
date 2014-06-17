@@ -190,7 +190,6 @@ extern void cpu_hotplug_enable(void);
 #define unregister_hotcpu_notifier(nb)	unregister_cpu_notifier(nb)
 int cpu_down(unsigned int cpu);
 
-#ifndef CONFIG_SEC_DVFS_DUAL
 #ifdef CONFIG_ARCH_CPU_PROBE_RELEASE
 extern void cpu_hotplug_driver_lock(void);
 extern void cpu_hotplug_driver_unlock(void);
@@ -202,10 +201,6 @@ static inline void cpu_hotplug_driver_lock(void)
 static inline void cpu_hotplug_driver_unlock(void)
 {
 }
-#endif
-#else
-extern void cpu_hotplug_driver_lock(void);
-extern void cpu_hotplug_driver_unlock(void);
 #endif
 
 #else		/* CONFIG_HOTPLUG_CPU */

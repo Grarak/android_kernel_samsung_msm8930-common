@@ -9,7 +9,7 @@ build () {
 	cd boot.img-ramdisk
 	find . | cpio -o -H newc | gzip > ../ramdisk.gz
 	cd ..
-	./mkbootimg-$1 --kernel zImage --ramdisk ramdisk.gz --base 0x80200000 --ramdisk_offset 0x02000000 --cmdline "console=null androidboot.hardware=qcom user_debug=31 zcache zswap.enabled=0 zswap.compressor=snappy" --pagesize 2048 -o boot.img
+	./mkbootimg-$1 --kernel zImage --ramdisk ramdisk.gz --base 0x80200000 --ramdisk_offset 0x02000000 --cmdline "console=null androidboot.hardware=qcom user_debug=31 msm_rtb.filter=0x3F ehci-hcd.park=3 maxcpus=4' zcache zswap.enabled=0 zswap.compressor=snappy" --pagesize 2048 -o boot.img
 }
 
 if [ -e ~/.bash_profile ]; then

@@ -159,11 +159,11 @@
 #include <sound/a2220.h>
 #endif
 #ifdef CONFIG_VIBETONZ
-#include <linux/vibrator.h>
+#include <linux/vibrator_msm8930.h>
 #endif
 
 #include <linux/power_supply.h>
-#include <linux/battery/sec_charger.h>
+// #include <linux/battery/sec_charger.h>
 
 #ifdef CONFIG_CPU_FREQ_GOV_INTELLIDEMAND
 int id_set_two_phase_freq(int cpufreq);
@@ -179,6 +179,7 @@ int id_set_two_phase_freq(int cpufreq);
 #include <linux/mfd/pm8xxx/pm8921-sec-charger.h>
 #endif
 #ifdef CONFIG_SEC_FPGA
+#define GPIO_FPGA_CDONE		0
 #include <linux/barcode_emul.h>
 #endif
 #ifdef CONFIG_FM_SI4705
@@ -187,6 +188,7 @@ int id_set_two_phase_freq(int cpufreq);
 #if defined(CONFIG_GSM_MODEM_SPRD6500)
 #include <mach/msm_serial_hs.h>
 #endif
+extern void msm8960_init_battery(void);
 bool ovp_state;
 static struct platform_device msm_fm_platform_init = {
 	.name = "iris_fm",
@@ -464,7 +466,6 @@ static void irda_vdd_onoff(bool onoff)
 #ifdef CONFIG_SENSORS_HALL
 #define GPIO_HALL_IC_IRQ	33
 #endif
-
 #ifdef CONFIG_KERNEL_MSM_CONTIG_MEM_REGION
 static unsigned msm_contig_mem_size = MSM_CONTIG_MEM_SIZE;
 static int __init msm_contig_mem_size_setup(char *p)
@@ -654,8 +655,8 @@ static struct i2c_board_info micro_usb_i2c_devices_info[] __initdata = {
 };
 #endif
 #if defined(CONFIG_VIDEO_MHL_V2)
-#ifdef CONFIG_MFD_MAX77693
-static void muic77693_mhl_cb(bool attached, int charger)
+#ifdef CONFIG_MHL_NEW_CBUS_MSC_CMD
+static void muic_mhl_cb(bool attached, int charger)
 {
 	union power_supply_propval value;
 	int i, ret = 0;
@@ -663,6 +664,7 @@ static void muic77693_mhl_cb(bool attached, int charger)
 	int current_cable_type = POWER_SUPPLY_TYPE_MISC;
 	int sub_type = ONLINE_SUB_TYPE_MHL;
 	int power_type = ONLINE_POWER_TYPE_UNKNOWN;
+#ifdef CONFIG_MFD_MAX77693
 	int muic_cable_type = max77693_muic_get_charging_type();
 
 	pr_info("%s: muic cable_type = %d\n",
@@ -675,19 +677,21 @@ static void muic77693_mhl_cb(bool attached, int charger)
 	default:
 		 break;
 	}
-
-	if (charger == 0x00) {
-		pr_info("TA charger\n");
-		power_type = ONLINE_POWER_TYPE_MHL_500;
-	} else if (charger == 0x01) {
-		pr_info("TA powered charger\n");
-		power_type = ONLINE_POWER_TYPE_MHL_900;
-	} else if (charger == 0x02) {
-		pr_info("TA powered charger\n");
-		power_type = ONLINE_POWER_TYPE_MHL_1500;
-	} else if (charger == 0x03) {
-		pr_info("USB charger\n");
-		power_type = ONLINE_POWER_TYPE_USB;
+#endif
+	if (attached) {
+		switch (charger) {
+		case 0:
+		case 1:
+			pr_info("USB charger\n");
+			power_type = ONLINE_POWER_TYPE_USB;
+			break;
+		case 2:
+			pr_info("TA powered charger\n");
+			power_type = ONLINE_POWER_TYPE_MHL_900;
+			break;
+		default:
+			current_cable_type = POWER_SUPPLY_TYPE_BATTERY;
+		}
 	} else
 		current_cable_type = POWER_SUPPLY_TYPE_BATTERY;
 
@@ -712,13 +716,15 @@ static void muic77693_mhl_cb(bool attached, int charger)
 	}
 }
 #else
-static void tsu6721_mhl_cb(bool attached)
+#define CABLE_TYPE_MISC 3
+#define CABLE_TYPE_NONE 0
+static void muic_mhl_cb(bool attached)
 {
 	union power_supply_propval value;
-	int i, ret = 0;
+	int i, set_cable_status, ret = 0;
 	struct power_supply *psy;
-
-	pr_info("tsu6721_mhl_cb attached %d\n", attached);
+	
+	pr_info("mhl_cb attached %d\n", attached);
 	set_cable_status = attached ? CABLE_TYPE_MISC : CABLE_TYPE_NONE;
 
 	for (i = 0; i < 10; i++) {
@@ -751,10 +757,9 @@ static void tsu6721_mhl_cb(bool attached)
 	}
 }
 #endif
-
 static void msm8930_mhl_gpio_init(void)
 {
-#if !defined (CONFIG_MACH_CRATER_CHN_CTC)
+#if !defined(CONFIG_MACH_MELIUS_CHN_CTC)
 	int ret;
 	ret = gpio_request(GPIO_MHL_RST, "mhl_rst");
 	if (ret < 0) {
@@ -768,15 +773,14 @@ static void msm8930_mhl_gpio_init(void)
 	}
 #endif
 }
-
 static void mhl_gpio_config(void)
 {
-#if !defined (CONFIG_MACH_CRATER_CHN_CTC)
+#if !defined(CONFIG_MACH_MELIUS_CHN_CTC)
 	gpio_tlmm_config(GPIO_CFG(GPIO_MHL_RST, 0, GPIO_CFG_OUTPUT,
 				GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), 1);
 	gpio_tlmm_config(GPIO_CFG(GPIO_MHL_WAKE_UP, 0, GPIO_CFG_OUTPUT,
 				GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), 1);
-#endif  
+#endif
 }
 
 static struct i2c_gpio_platform_data mhl_i2c_gpio_data = {
@@ -792,6 +796,7 @@ static struct platform_device mhl_i2c_gpio_device = {
 		.platform_data  = &mhl_i2c_gpio_data,
 	},
 };
+
 /*
 gpio_interrupt pin is very changable each different h/w_rev or  board.
 */
@@ -865,19 +870,16 @@ static void sii9234_hw_onoff(bool onoff)
 			pr_err("error disabling regulator mhl_lvs7\n");
 
 		usleep_range(10000, 20000);
-#if !defined (CONFIG_MACH_CRATER_CHN_CTC)
 		if (gpio_direction_output(GPIO_MHL_RST, 0)) {
 			pr_err("%s error in making GPIO_MHL_RST Low\n"
 				, __func__);
 		}
-#endif    
 	}
 }
 
 static void sii9234_hw_reset(void)
 {
 	usleep_range(10000, 20000);
-#if !defined (CONFIG_MACH_CRATER_CHN_CTC)
 	if (gpio_direction_output(GPIO_MHL_RST, 1))
 		printk(KERN_ERR "%s error in making GPIO_MHL_RST HIGH\n",
 			 __func__);
@@ -891,7 +893,6 @@ static void sii9234_hw_reset(void)
 	if (gpio_direction_output(GPIO_MHL_RST, 1))
 		printk(KERN_ERR "%s error in making GPIO_MHL_RST HIGH\n",
 			 __func__);
-#endif  
 	msleep(30);
 }
 
@@ -901,11 +902,7 @@ struct sii9234_platform_data sii9234_pdata = {
 	.hw_reset = sii9234_hw_reset,
 	.gpio_cfg = mhl_gpio_config,
 	.swing_level = 0xF6,
-#ifdef CONFIG_MFD_MAX77693
-	.vbus_present = muic77693_mhl_cb,
-#else
-	.vbus_present = tsu6721_mhl_cb,
-#endif
+	.vbus_present = muic_mhl_cb,
 };
 
 static struct i2c_board_info mhl_i2c_board_info[] = {
@@ -938,6 +935,21 @@ enum {
 static void sensor_power_on_vdd(int, int);
 #endif
 
+#ifdef CONFIG_MSM_ACTUATOR /* For Camera Actuator By Teddy */
+static struct i2c_gpio_platform_data actuator_i2c_gpio_data = {
+	.sda_pin = GPIO_I2C_DATA_AF,
+	.scl_pin = GPIO_I2C_CLK_AF,
+	.udelay = 5,
+};
+static struct platform_device actuator_i2c_gpio_device = {
+	.name = "i2c-gpio",
+	.id = MSM_ACTUATOR_I2C_BUS_ID,
+	.dev = {
+		.platform_data = &actuator_i2c_gpio_data,
+	},
+};
+#endif
+
 #if defined(CONFIG_INPUT_YAS_SENSORS)
 static void sensors_regulator_on(bool onoff)
 {
@@ -949,6 +961,7 @@ static struct mag_platform_data magnetic_pdata = {
 	.position = 1,
 };
 
+#if 0 /* Removed as actuator was under sensors flag */
 #ifdef CONFIG_MSM_ACTUATOR /* For Camera Actuator By Teddy */
 static struct i2c_gpio_platform_data actuator_i2c_gpio_data = {
 	.sda_pin = GPIO_I2C_DATA_AF,
@@ -963,6 +976,7 @@ static struct platform_device actuator_i2c_gpio_device = {
 		.platform_data = &actuator_i2c_gpio_data,
 	},
 };
+#endif
 #endif
 
 #if defined(CONFIG_MACH_MELIUS_CHN_CTC) ||  defined(CONFIG_MACH_CRATER_CHN_CTC)
@@ -981,7 +995,7 @@ static struct platform_device sns_i2c_gpio_device = {
 };
 #endif
 
-#if defined(CONFIG_MACH_CRATER_CHN_CTC)
+#if defined(CONFIG_MACH_CRATER_CHN_CTC)||defined(CONFIG_MACH_MELIUS_CHN_CTC)
 void sensor_gpio_init(void){
 	pr_info("sensor gpio init \n");
 	gpio_tlmm_config(GPIO_CFG(GPIO_SENSOR_SDA_1_8V, 0, GPIO_CFG_INPUT,
@@ -1036,8 +1050,12 @@ static int __init sensor_device_init(void)
 
 	gpio_request(GPIO_GYRO_INT_N, "GYRO_INT");
 	gpio_direction_input(GPIO_GYRO_INT_N);
-#ifdef CONFIG_MACH_CRATER_CHN_CTC
+#if defined(CONFIG_MACH_CRATER_CHN_CTC)
 	magnetic_pdata.position = 3;
+#elif defined(CONFIG_MACH_MELIUS_USC)
+	magnetic_pdata.position = 4;
+#elif defined(CONFIG_MACH_MELIUS_VZW)
+	magnetic_pdata.position = 7;
 #else
 	magnetic_pdata.position = 6;
 #endif
@@ -1957,7 +1975,7 @@ static void __init reserve_ion_memory(void)
 
 			if (fixed_position != NOT_FIXED)
 				fixed_size += heap->size;
-			else if (!use_cma)
+			else
 				reserve_mem_for_ion(MEMTYPE_EBI1, heap->size);
 
 			if (fixed_position == FIXED_LOW) {
@@ -3253,7 +3271,13 @@ static int msm_hsusb_vbus_power(bool on)
 static int hsusb_phy_init_seq[] = {
 	0x44, 0x80, /* set VBUS valid threshold
 			and disconnect valid threshold */
+#if defined (CONFIG_MACH_MELIUS_SPR)
+	0x7F, 0x81, /* update DC voltage level */
+#elif defined (CONFIG_MACH_MELIUS_MTR)
+	0x6F, 0x81, /* update DC voltage level */
+#else
 	0x5F, 0x81, /* update DC voltage level */
+#endif
 	0x3C, 0x82, /* set preemphasis and rise/fall time */
 	0x13, 0x83, /* set source impedance adjusment */
 	-1};
@@ -3275,7 +3299,6 @@ static struct msm_otg_platform_data msm_otg_pdata = {
 	.mpm_otgsessvld_int	= MSM_MPM_PIN_USB1_OTGSESSVLD,
 	.vbus_power		= msm_hsusb_vbus_power,
 };
-#include "board-8930-otg.c"
 #endif
 
 #define PID_MAGIC_ID		0x71432909
@@ -3376,21 +3399,6 @@ static uint8_t spm_power_collapse_with_rpm[] __initdata = {
 	0x09, 0x07, 0x01, 0x0B,
 	0x10, 0x54, 0x30, 0x0C,
 	0x24, 0x30, 0x0f,
-};
-
-static uint8_t spm_power_collapse_without_rpm_krait_v3[] __initdata = {
-	0x00, 0x30, 0x24, 0x30,
-	0x54, 0x10, 0x09, 0x03,
-	0x01, 0x10, 0x54, 0x30,
-	0x0C, 0x24, 0x30, 0x0f,
-};
-
-static uint8_t spm_power_collapse_with_rpm_krait_v3[] __initdata = {
-	0x00, 0x30, 0x24, 0x30,
-	0x54, 0x10, 0x09, 0x07,
-	0x01, 0x0B, 0x10, 0x54,
-	0x30, 0x0C, 0x24, 0x30,
-	0x0f,
 };
 
 static struct msm_spm_seq_entry msm_spm_boot_cpu_seq_list[] __initdata = {
@@ -3544,8 +3552,6 @@ static struct i2c_board_info sii_device_info[] __initdata = {
 };
 #endif /*CONFIG_FB_MSM_HDMI_MHL_8334*/
 
-#ifdef MSM8930_PHASE_2
-
 #ifdef CONFIG_KEYBOARD_GPIO
 static struct gpio_keys_button gpio_keys_button[] = {
 	{
@@ -3578,7 +3584,7 @@ static struct gpio_keys_button gpio_keys_button[] = {
 		.gpio			= GPIO_HOME_KEY,
 		.active_low		= 1,
 		.wakeup			= 1,
-		.debounce_interval	= 5, /* ms */
+		.debounce_interval	= 15, /* ms */
 		.desc			= "Home",
 #if defined(CONFIG_KEYBOARD_GPIO_EXTENDED_RESUME_EVENT)
 		.support_evt		= SUPPORT_RESUME_KEY_EVENT,
@@ -3595,13 +3601,14 @@ static struct gpio_keys_platform_data gpio_keys_platform_data = {
 };
 
 static struct platform_device msm8960_gpio_keys_device = {
-	.name	= "sec_keys",
+	.name	= "gpio-keys",
 	.id	= -1,
 	.dev	= {
 		.platform_data	= &gpio_keys_platform_data,
 	}
 };
 #endif
+#ifdef MSM8930_PHASE_2
 #ifdef CONFIG_FM_SI4705
 static void fmradio_gpio_init(void)
 {
@@ -4081,7 +4088,7 @@ static struct msm_thermal_data msm_thermal_pdata = {
 	.sensor_id = 9,
 #ifdef CONFIG_INTELLI_THERMAL
 	.poll_ms = 250,
-	.limit_temp_degC = 70,
+	.limit_temp_degC = 80,
 	.temp_hysteresis_degC = 10,
         .freq_step = 2,
         .freq_control_mask = 0xf,
@@ -4090,6 +4097,7 @@ static struct msm_thermal_data msm_thermal_pdata = {
 	.core_control_mask = 0xe,
 #else
 	.poll_ms = 1000,
+	.limit_temp_degC = 80,
 	.temp_hysteresis_degC = 10,
         .freq_step = 2,
 #endif
@@ -4156,6 +4164,7 @@ static struct platform_device msm8930_device_rpm_regulator __devinitdata = {
 };
 
 #ifdef CONFIG_SAMSUNG_JACK
+#if defined (CONFIG_MACH_MELIUS_CHN_CTC)
 static struct sec_jack_zone jack_zones[] = {
 	[0] = {
 		.adc_high	= 3,
@@ -4182,7 +4191,152 @@ static struct sec_jack_zone jack_zones[] = {
 		.jack_type	= SEC_HEADSET_4POLE,
 	},
 };
-#ifdef CONFIG_MACH_MELIUS_EUR_OPEN
+
+static struct sec_jack_zone jack_zones_rev08[] = {
+	[0] = {
+		.adc_high	= 3,
+		.delay_ms	= 10,
+		.check_count	= 10,
+		.jack_type	= SEC_HEADSET_3POLE,
+	},
+	[1] = {
+		.adc_high	= 710,
+		.delay_ms	= 10,
+		.check_count	= 10,
+		.jack_type	= SEC_HEADSET_3POLE,
+	},
+	[2] = {
+		.adc_high	= 2700,
+		.delay_ms	= 10,
+		.check_count	= 10,
+		.jack_type	= SEC_HEADSET_4POLE,
+	},
+	[3] = {
+		.adc_high	= 9999,
+		.delay_ms	= 10,
+		.check_count	= 10,
+		.jack_type	= SEC_HEADSET_4POLE,
+	},
+};
+#elif defined(CONFIG_MACH_MELIUS_USC) || defined(CONFIG_MACH_MELIUS_SPR) || defined(CONFIG_MACH_MELIUS_VZW)
+static struct sec_jack_zone jack_zones[] = {
+	[0] = {
+		.adc_high	= 3,
+		.delay_us	= 10000,
+		.check_count	= 10,
+		.jack_type	= SEC_HEADSET_3POLE,
+	},
+	[1] = {
+		.adc_high	= 620,
+		.delay_us	= 10000,
+		.check_count	= 10,
+		.jack_type	= SEC_HEADSET_3POLE,
+	},
+	[2] = {
+		.adc_high	= 2700,
+		.delay_us	= 10000,
+		.check_count	= 10,
+		.jack_type	= SEC_HEADSET_4POLE,
+	},
+	[3] = {
+		.adc_high	= 9999,
+		.delay_us	= 10000,
+		.check_count	= 10,
+		.jack_type	= SEC_HEADSET_4POLE,
+	},
+};
+#elif defined(CONFIG_MACH_MELIUS_EUR_OPEN)
+static struct sec_jack_zone jack_zones[] = {
+	[0] = {
+		.adc_high	= 3,
+		.delay_us	= 10000,
+		.check_count	= 10,
+		.jack_type	= SEC_HEADSET_3POLE,
+	},
+	[1] = {
+		.adc_high	= 1030,
+		.delay_us	= 10000,
+		.check_count	= 10,
+		.jack_type	= SEC_HEADSET_3POLE,
+	},
+	[2] = {
+		.adc_high	= 2700,
+		.delay_us	= 10000,
+		.check_count	= 10,
+		.jack_type	= SEC_HEADSET_4POLE,
+	},
+	[3] = {
+		.adc_high	= 9999,
+		.delay_us	= 10000,
+		.check_count	= 10,
+		.jack_type	= SEC_HEADSET_4POLE,
+	},
+};
+#else
+static struct sec_jack_zone jack_zones[] = {
+	[0] = {
+		.adc_high	= 3,
+		.delay_us	= 10000,
+		.check_count	= 10,
+		.jack_type	= SEC_HEADSET_3POLE,
+	},
+	[1] = {
+		.adc_high	= 950,
+		.delay_us	= 10000,
+		.check_count	= 10,
+		.jack_type	= SEC_HEADSET_3POLE,
+	},
+	[2] = {
+		.adc_high	= 2700,
+		.delay_us	= 10000,
+		.check_count	= 10,
+		.jack_type	= SEC_HEADSET_4POLE,
+	},
+	[3] = {
+		.adc_high	= 9999,
+		.delay_us	= 10000,
+		.check_count	= 10,
+		.jack_type	= SEC_HEADSET_4POLE,
+	},
+};
+#endif
+
+#if defined (CONFIG_MACH_MELIUS_CHN_CTC)
+static struct sec_jack_buttons_zone jack_buttons_zones[] = {
+	{
+		.code		= KEY_MEDIA,
+		.adc_low	= 0,
+		.adc_high	= 175,
+	},
+	{
+		.code		= KEY_VOLUMEUP,
+		.adc_low	= 176,
+		.adc_high	= 350,
+	},
+	{
+		.code		= KEY_VOLUMEDOWN,
+		.adc_low	= 351,
+		.adc_high	= 680,
+	},
+};
+static struct sec_jack_buttons_zone jack_buttons_zones_rev08[] = {
+	{
+		.code		= KEY_MEDIA,
+		.adc_low	= 0,
+		.adc_high	= 115,
+	},
+	{
+		.code		= KEY_VOLUMEUP,
+		.adc_low	= 116,
+		.adc_high	= 240,
+	},
+	{
+		.code		= KEY_VOLUMEDOWN,
+		.adc_low	= 241,
+		.adc_high	= 700,
+	},
+};
+#elif defined (CONFIG_MACH_MELIUS_EUR_OPEN)
 static struct sec_jack_buttons_zone jack_buttons_zones[] = {
 	{
 		.code		= KEY_MEDIA,
@@ -4217,6 +4371,25 @@ static struct sec_jack_buttons_zone jack_buttons_zones_rev06[] = {
 		.adc_high	= 680,
 	},
 };
+#elif defined(CONFIG_MACH_MELIUS_USC) || defined(CONFIG_MACH_MELIUS_SPR) || defined(CONFIG_MACH_MELIUS_VZW)
+/* To support 3-buttons earjack */
+static struct sec_jack_buttons_zone jack_buttons_zones[] = {
+	{
+		.code		= KEY_MEDIA,
+		.adc_low	= 0,
+		.adc_high	= 107,
+	},
+	{
+		.code		= KEY_VOLUMEUP,
+		.adc_low	= 108,
+		.adc_high	= 210,
+	},
+	{
+		.code		= KEY_VOLUMEDOWN,
+		.adc_low	= 211,
+		.adc_high	= 440,
+	},
+};
 #else
 /* To support 3-buttons earjack */
 static struct sec_jack_buttons_zone jack_buttons_zones[] = {
@@ -4247,7 +4420,6 @@ static int get_sec_gnd_jack_state(void)
 
 	return status^1;
 }
-#endif
 
 static int get_sec_det_jack_state(void)
 {
@@ -4259,6 +4431,7 @@ static int get_sec_det_jack_state(void)
 	return status^1;
 }
 
+#endif
 static int get_sec_send_key_state(void)
 {
 	int status = 0;
@@ -4269,7 +4442,8 @@ static int get_sec_send_key_state(void)
 	return status^1;
 }
 
-/* extern void msm8930_enable_codec_internal_micbias(bool state); */
+/* extern void msm8930_enable_codec_internal_micbias(bool state);*/
+   extern void msm8930_enable_ear_micbias(bool state);
 
 static void set_sec_micbias_state(bool state)
 {
@@ -4289,7 +4463,6 @@ static int sec_jack_get_adc_value(void)
 	int rc = 0;
 	int retVal = 0;
 	struct pm8xxx_adc_chan_result result;
-
 	rc = pm8xxx_adc_mpp_config_read(
 			PM8XXX_AMUX_MPP_7,
 			ADC_MPP_1_AMUX6_SCALE_DEFAULT,
@@ -4304,19 +4477,26 @@ static int sec_jack_get_adc_value(void)
 }
 
 static struct sec_jack_platform_data sec_jack_data = {
-	.get_det_jack_state	= get_sec_det_jack_state,
+#if defined(CONFIG_SAMSUNG_JACK_GNDLDET)
+	.get_l_jack_state	= get_sec_det_jack_state,
+#endif
 	.get_send_key_state	= get_sec_send_key_state,
 	.set_micbias_state	= set_sec_micbias_state,
 	.get_adc_value		= sec_jack_get_adc_value,
 	.zones			= jack_zones,
+#ifdef CONFIG_MACH_MELIUS_CHN_CTC
+	.zones_rev08		= jack_zones_rev08,
+#endif
 	.num_zones		= ARRAY_SIZE(jack_zones),
 	.buttons_zones		= jack_buttons_zones,
-#ifdef CONFIG_MACH_MELIUS_EUR_OPEN
+#if defined (CONFIG_MACH_MELIUS_CHN_CTC)
+	.buttons_zones_rev08	= jack_buttons_zones_rev08,
+#elif defined (CONFIG_MACH_MELIUS_EUR_OPEN)
 	.buttons_zones_rev06		= jack_buttons_zones_rev06,
 #endif
 	.num_buttons_zones	= ARRAY_SIZE(jack_buttons_zones),
-	.det_int		= MSM_GPIO_TO_INT(GPIO_EAR_DET),
-	.send_int		= MSM_GPIO_TO_INT(GPIO_EAR_SEND_END),
+	.det_gpio		= GPIO_EAR_DET,
+	.send_end_gpio		= GPIO_EAR_SEND_END,
 #if defined(CONFIG_SAMSUNG_JACK_GNDLDET)
 	.get_gnd_jack_state	= get_sec_gnd_jack_state,
 #endif
@@ -4491,7 +4671,6 @@ static struct platform_device *common_devices[] __initdata = {
 	&msm_tsens_device,
 	&msm8930_cache_dump_device,
 	&msm8930_pc_cntr,
-	&msm8930_cpu_slp_status,
 #if defined(CONFIG_MACH_MELIUS_CHN_CTC)|| defined(CONFIG_MACH_CRATER_CHN_CTC)
 	&sns_i2c_gpio_device,
 #endif
@@ -4941,17 +5120,6 @@ static void __init register_i2c_devices(void)
 		msm8930_camera_board_info.num_i2c_board_info,
 	};
 #endif
-#ifdef CONFIG_MACH_CRATER_CHN_CTC
-	extern struct msm_camera_board_info msm8930_camera_sr200pc20m_board_info;
-
-	struct i2c_registry msm8930_camera_sr200pc20m_i2c_devices = {
-			MSM_8930_GSBI9_QUP_I2C_BUS_ID,
-			//SR200PC20M_I2C_BUS_ID,
-			msm8930_camera_sr200pc20m_board_info.board_info,
-			msm8930_camera_sr200pc20m_board_info.num_i2c_board_info,
-		};
-
-#endif
 
 #ifdef CONFIG_SAMSUNG_CMC624
 	struct i2c_registry cmc624_i2c_devices = {
@@ -4976,12 +5144,6 @@ static void __init register_i2c_devices(void)
 	i2c_register_board_info(cmc624_i2c_devices.bus,
 		cmc624_i2c_devices.info,
 		cmc624_i2c_devices.len);
-#endif
-#ifdef CONFIG_MACH_CRATER_CHN_CTC
-
-	i2c_register_board_info(msm8930_camera_sr200pc20m_i2c_devices.bus,
-		msm8930_camera_sr200pc20m_i2c_devices.info,
-		msm8930_camera_sr200pc20m_i2c_devices.len);
 #endif
 #endif
 }
@@ -5111,27 +5273,6 @@ static void __init msm8930_pm8917_pdata_fixup(void)
 
 	pdata = msm8930ab_device_acpuclk.dev.platform_data;
 	pdata->uses_pm8917 = true;
-}
-
-static void __init msm8930ab_update_krait_spm(void)
-{
-	int i;
-
-	/* Update the SPM sequences for SPC and PC */
-	for (i = 0; i < ARRAY_SIZE(msm_spm_data); i++) {
-		int j;
-		struct msm_spm_platform_data *pdata = &msm_spm_data[i];
-		for (j = 0; j < pdata->num_modes; j++) {
-			if (pdata->modes[j].cmd ==
-					spm_power_collapse_without_rpm)
-				pdata->modes[j].cmd =
-				spm_power_collapse_without_rpm_krait_v3;
-			else if (pdata->modes[j].cmd ==
-					spm_power_collapse_with_rpm)
-				pdata->modes[j].cmd =
-				spm_power_collapse_with_rpm_krait_v3;
-		}
-	}
 }
 
 static void __init msm8930ab_update_retention_spm(void)
@@ -5331,8 +5472,6 @@ void __init msm8930_melius_init(void)
 #endif
 	msm8930_i2c_init();
 	msm8930_init_gpu();
-	if (cpu_is_msm8930ab())
-		msm8930ab_update_krait_spm();
 	if (cpu_is_krait_v3()) {
 		msm_pm_set_tz_retention_flag(0);
 		msm8930ab_update_retention_spm();
@@ -5404,7 +5543,7 @@ void __init msm8930_melius_init(void)
 #ifdef CONFIG_FM_SI4705
 	fmradio_gpio_init();
 #endif
-#ifdef CONFIG_MACH_CRATER_CHN_CTC
+#if defined(CONFIG_MACH_CRATER_CHN_CTC)||defined(CONFIG_MACH_MELIUS_CHN_CTC)
 	sensor_gpio_init();
 #endif
 #ifdef CONFIG_SLIMBUS_MSM_CTRL
@@ -5471,10 +5610,6 @@ void __init msm8930_melius_init(void)
 #endif
 #if defined(CONFIG_TDMB) || defined(CONFIG_TDMB_MODULE)
 	tdmb_dev_init();
-#endif
-
-#ifdef CONFIG_USB_HOST_NOTIFY
-	msm_otg_power_init(GPIO_OTG_TEST, 0);
 #endif
 }
 

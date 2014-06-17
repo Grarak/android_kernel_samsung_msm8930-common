@@ -19,6 +19,10 @@
 #include <linux/mfd/pm8xxx/pm8xxx-adc.h>
 #include <mach/sec_thermistor.h>
 
+#if defined (CONFIG_MACH_LT02)
+extern int msm8930_get_board_rev(void);
+#endif
+
 #define ADC_SAMPLING_CNT	7
 
 struct sec_therm_info {
@@ -83,17 +87,31 @@ static int sec_therm_get_adc_data(struct sec_therm_info *info)
 	int adc_total = 0;
 	int i, adc_data;
 	struct pm8xxx_adc_chan_result result;
+#if defined (CONFIG_MACH_LT02)
+	int system_rev = msm8930_get_board_rev();
+#endif
 
 	for (i = 0; i < ADC_SAMPLING_CNT; i++) {
+#if defined (CONFIG_MACH_LT02)
+		if (system_rev >= 2)
+			rc = pm8xxx_adc_mpp_config_read(PM8XXX_AMUX_MPP_3,
+						ADC_MPP_1_AMUX6, &result);
+		else
+			rc = pm8xxx_adc_mpp_config_read(PM8XXX_AMUX_MPP_4,
+						ADC_MPP_1_AMUX6, &result);
+#elif defined (CONFIG_MACH_JF)
+		rc = pm8xxx_adc_mpp_config_read(PM8XXX_AMUX_MPP_1,
+						ADC_MPP_1_AMUX6, &result);
+#else
 		rc = pm8xxx_adc_mpp_config_read(PM8XXX_AMUX_MPP_4,
 						ADC_MPP_1_AMUX6, &result);
+#endif
 		if (rc) {
 			pr_err("error reading mpp %d, rc = %d\n",
-						PM8XXX_AMUX_MPP_4, rc);
+						PM8XXX_AMUX_MPP_1, rc);
 			goto err;
 		}
 		adc_data = (int)result.measurement;
-		pr_err("reading PM8XXX_AMUX_MPP_4 [rc = %d] [measurement = %lld]\n", rc,result.measurement);
 
 		if (i != 0) {
 			if (adc_data > adc_max)
@@ -135,9 +153,9 @@ static int convert_adc_to_temper(struct sec_therm_info *info, unsigned int adc)
 		else if (info->pdata->adc_table[mid].adc < adc)
 			low = mid + 1;
 		else
-			return info->pdata->adc_table[mid].temperature;
+			break;
 	}
-	return info->pdata->adc_table[low].temperature;
+	return info->pdata->adc_table[mid].temperature;
 }
 
 static void notify_change_of_temperature(struct sec_therm_info *info)
@@ -169,7 +187,6 @@ static void notify_change_of_temperature(struct sec_therm_info *info)
 	}
 	envp[env_offset] = NULL;
 
-	dev_info(info->dev, "%s: siop_level=%d\n", __func__, siop_level);
 	dev_info(info->dev, "%s: uevent: %s\n", __func__, temp_buf);
 	kobject_uevent_env(&info->dev->kobj, KOBJ_CHANGE, envp);
 }
@@ -295,7 +312,6 @@ static struct platform_driver sec_thermistor_driver = {
 
 static int __init sec_therm_init(void)
 {
-	pr_info("func:%s\n", __func__);
 	return platform_driver_register(&sec_thermistor_driver);
 }
 module_init(sec_therm_init);

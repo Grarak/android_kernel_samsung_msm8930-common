@@ -20,7 +20,6 @@
 #include <linux/module.h>
 #include <linux/memory_alloc.h>
 #include <linux/memblock.h>
-#include <asm/memblock.h>
 #include <asm/pgtable.h>
 #include <asm/io.h>
 #include <asm/mach/map.h>
@@ -34,6 +33,7 @@
 #include <linux/completion.h>
 #include <linux/err.h>
 #endif
+#include <linux/android_pmem.h>
 #include <mach/msm_iomap.h>
 #include <mach/socinfo.h>
 #include <linux/sched.h>
@@ -113,6 +113,34 @@ void invalidate_caches(unsigned long vstart,
 	outer_inv_range(pstart, pstart + length);
 }
 
+void * __init alloc_bootmem_aligned(unsigned long size, unsigned long alignment)
+{
+	void *unused_addr = NULL;
+	unsigned long addr, tmp_size, unused_size;
+
+	/* Allocate maximum size needed, see where it ends up.
+	 * Then free it -- in this path there are no other allocators
+	 * so we can depend on getting the same address back
+	 * when we allocate a smaller piece that is aligned
+	 * at the end (if necessary) and the piece we really want,
+	 * then free the unused first piece.
+	 */
+
+	tmp_size = size + alignment - PAGE_SIZE;
+	addr = (unsigned long)alloc_bootmem(tmp_size);
+	free_bootmem(__pa(addr), tmp_size);
+
+	unused_size = alignment - (addr % alignment);
+	if (unused_size)
+		unused_addr = alloc_bootmem(unused_size);
+
+	addr = (unsigned long)alloc_bootmem(size);
+	if (unused_size)
+		free_bootmem(__pa(unused_addr), unused_size);
+
+	return (void *)addr;
+}
+
 char *memtype_name[] = {
 	"SMI_KERNEL",
 	"SMI",
@@ -122,29 +150,63 @@ char *memtype_name[] = {
 
 struct reserve_info *reserve_info;
 
-/**
- * calculate_reserve_limits() - calculate reserve limits for all
- * memtypes
- *
- * for each memtype in the reserve_info->memtype_reserve_table, sets
- * the `limit' field to the largest size of any memblock of that
- * memtype.
- */
+static unsigned long stable_size(struct membank *mb,
+	unsigned long unstable_limit)
+{
+	unsigned long upper_limit = mb->start + mb->size;
+
+	if (!unstable_limit)
+		return mb->size;
+
+	/* Check for 32 bit roll-over */
+	if (upper_limit >= mb->start) {
+		/* If we didn't roll over we can safely make the check below */
+		if (upper_limit <= unstable_limit)
+			return mb->size;
+	}
+
+	if (mb->start >= unstable_limit)
+		return 0;
+	return unstable_limit - mb->start;
+}
+
+/* stable size of all memory banks contiguous to and below this one */
+static unsigned long total_stable_size(unsigned long bank)
+{
+	int i;
+	struct membank *mb = &meminfo.bank[bank];
+	int memtype = reserve_info->paddr_to_memtype(mb->start);
+	unsigned long size;
+
+	size = stable_size(mb, reserve_info->low_unstable_address);
+	for (i = bank - 1, mb = &meminfo.bank[bank - 1]; i >= 0; i--, mb--) {
+		if (mb->start + mb->size != (mb + 1)->start)
+			break;
+		if (reserve_info->paddr_to_memtype(mb->start) != memtype)
+			break;
+		size += stable_size(mb, reserve_info->low_unstable_address);
+	}
+	return size;
+}
+
 static void __init calculate_reserve_limits(void)
 {
-	struct memblock_region *mr;
+	int i;
+	struct membank *mb;
 	int memtype;
 	struct memtype_reserve *mt;
+	unsigned long size;
 
-	for_each_memblock(memory, mr) {
-		memtype = reserve_info->paddr_to_memtype(mr->base);
+	for (i = 0, mb = &meminfo.bank[0]; i < meminfo.nr_banks; i++, mb++)  {
+		memtype = reserve_info->paddr_to_memtype(mb->start);
 		if (memtype == MEMTYPE_NONE) {
-			pr_warning("unknown memory type for region at %lx\n",
-				(long unsigned int)mr->base);
+			pr_warning("unknown memory type for bank at %lx\n",
+				(long unsigned int)mb->start);
 			continue;
 		}
 		mt = &reserve_info->memtype_reserve_table[memtype];
-		mt->limit = max_t(unsigned long, mt->limit, mr->size);
+		size = total_stable_size(i);
+		mt->limit = max(mt->limit, size);
 	}
 }
 
@@ -167,18 +229,50 @@ static void __init adjust_reserve_sizes(void)
 
 static void __init reserve_memory_for_mempools(void)
 {
-	int memtype;
+	int i, memtype, membank_type;
 	struct memtype_reserve *mt;
-	phys_addr_t alignment;
+	struct membank *mb;
+	int ret;
+	unsigned long size;
 
 	mt = &reserve_info->memtype_reserve_table[0];
 	for (memtype = 0; memtype < MEMTYPE_MAX; memtype++, mt++) {
 		if (mt->flags & MEMTYPE_FLAGS_FIXED || !mt->size)
 			continue;
-		alignment = (mt->flags & MEMTYPE_FLAGS_1M_ALIGN) ?
-			SZ_1M : PAGE_SIZE;
-		mt->start = arm_memblock_steal(mt->size, alignment);
-		BUG_ON(!mt->start);
+
+		/* We know we will find memory bank(s) of the proper size
+		 * as we have limited the size of the memory pool for
+		 * each memory type to the largest total size of the memory
+		 * banks which are contiguous and of the correct memory type.
+		 * Choose the memory bank with the highest physical
+		 * address which is large enough, so that we will not
+		 * take memory from the lowest memory bank which the kernel
+		 * is in (and cause boot problems) and so that we might
+		 * be able to steal memory that would otherwise become
+		 * highmem. However, do not use unstable memory.
+		 */
+		for (i = meminfo.nr_banks - 1; i >= 0; i--) {
+			mb = &meminfo.bank[i];
+			membank_type =
+				reserve_info->paddr_to_memtype(mb->start);
+			if (memtype != membank_type)
+				continue;
+			size = total_stable_size(i);
+			if (size >= mt->size) {
+				size = stable_size(mb,
+					reserve_info->low_unstable_address);
+				if (!size)
+					continue;
+				/* mt->size may be larger than size, all this
+				 * means is that we are carving the memory pool
+				 * out of multiple contiguous memory banks.
+				 */
+				mt->start = mb->start + (size - mt->size);
+				ret = memblock_remove(mt->start, mt->size);
+				BUG_ON(ret);
+				break;
+			}
+		}
 	}
 }
 

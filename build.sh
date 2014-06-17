@@ -46,7 +46,7 @@ if [ "$kernelversion" == "y" ]; then
 fi
 ###########################################################################
 
-make melius_defconfig VARIANT_DEFCONFIG=msm8930_melius_eur_lte_defconfig
+make melius_defconfig VARIANT_DEFCONFIG=msm8930_melius_eur_lte_defconfig SELINUX_DEFCONFIG=selinux_defconfig
 echo -e "${bldcya}Build kernel ${txtrst}"
 cp arch/arm/configs/gk_melius_defconfig .config
 sed -i s/CONFIG_LOCALVERSION=\".*\"/CONFIG_LOCALVERSION=\"-GraKernel_${version}\"/ .config

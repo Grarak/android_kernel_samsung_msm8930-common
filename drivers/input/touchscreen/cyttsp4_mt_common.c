@@ -31,32 +31,17 @@
 #define PALM_ACTION			// KEVI added +
 #define HAND_BLADE_ACTION	// KEVI added +
 #if defined(PALM_ACTION) || defined(HAND_BLADE_ACTION)
-#define CY_MIN_ANGLE	-90	
+#define CY_MIN_ANGLE	-90
 #define CY_MAX_ANGLE	90
 #endif
 
-#ifdef CONFIG_SEC_DVFS
-#define TSP_BOOSTER
-#else
-#undef TSP_BOOSTER
-#endif
-
-#include <linux/input.h>
-#include <linux/input/mt.h>
-#include <linux/cyttsp4_core.h>
-
-// #define dev_vdbg dev_dbg
 #include "cyttsp4_mt_common.h"
-
-#if 0 /* FIX BUILD ERROR CANE3G */
-extern int dump_enable_flag;		// debug level
-#else
-int dump_enable_flag=1;
-#endif
 #if defined(TSP_BOOSTER)
 #include <linux/cpufreq.h>
-#define TOUCH_BOOSTER		1
-#define TOUCH_BOOSTER_OFF_TIME	100
+#define DVFS_STAGE_DUAL		2
+#define DVFS_STAGE_SINGLE		1
+#define DVFS_STAGE_NONE		0
+#define TOUCH_BOOSTER_OFF_TIME	300
 #define TOUCH_BOOSTER_CHG_TIME	200
 #endif
 
@@ -64,39 +49,58 @@ int dump_enable_flag=1;
 
 #ifdef PALM_ACTION
 	static int palm_detected = 0;
-	static int surface_touch_check = 0;
+	static int palm_keeping = 0;
 #endif
+
 
 #if defined(TSP_BOOSTER)
 static void change_dvfs_lock(struct work_struct *work)
 {
 	struct cyttsp4_mt_data *md = container_of(work,struct cyttsp4_mt_data, work_dvfs_chg.work);
-	int ret;
+	int ret = 0;
 	mutex_lock(&md->dvfs_lock);
-	ret = set_freq_limit(DVFS_TOUCH_ID, 1008000);
-	mutex_unlock(&md->dvfs_lock);
 
+	if (md->dvfs_boost_mode == DVFS_STAGE_DUAL) {
+		ret = set_freq_limit(DVFS_TOUCH_ID, MIN_TOUCH_LIMIT_SECOND);
+		md->dvfs_freq = MIN_TOUCH_LIMIT_SECOND;
+	} else if (md->dvfs_boost_mode == DVFS_STAGE_SINGLE) {
+		ret = set_freq_limit(DVFS_TOUCH_ID, -1);
+		md->dvfs_freq = -1;
+	}
 	if (ret < 0)
 		printk(KERN_ERR "[TSP] %s: 1booster stop failed(%d)\n",\
 					__func__, __LINE__);
 	else
 		printk(KERN_INFO "[TSP] %s", __func__);
+
+	mutex_unlock(&md->dvfs_lock);
 }
 
 static void set_dvfs_off(struct work_struct *work)
 {
 	struct cyttsp4_mt_data *md = container_of(work,struct cyttsp4_mt_data, work_dvfs_off.work);
+	int ret;
 	mutex_lock(&md->dvfs_lock);
-	set_freq_limit(DVFS_TOUCH_ID, -1);
+	ret = set_freq_limit(DVFS_TOUCH_ID, -1);
+	if (ret < 0)
+		printk(KERN_ERR "[TSP] %s: 1booster stop failed(%d)\n",\
+					__func__, __LINE__);
+	md->dvfs_freq = -1;
 	md->dvfs_lock_status = false;
 	mutex_unlock(&md->dvfs_lock);
 
 	printk(KERN_INFO "[TSP] DVFS Off!\n");
 }
 
-static void set_dvfs_lock(struct cyttsp4_mt_data *md, uint32_t on)
+static void set_dvfs_lock(struct cyttsp4_mt_data *md, int on)
 {
+
 	int ret = 0;
+
+	if (md->dvfs_boost_mode == DVFS_STAGE_NONE) {
+		printk(KERN_INFO "%s: DVFS stage is none(%d)\n", __func__, md->dvfs_boost_mode);
+		return;
+	}
 
 	mutex_lock(&md->dvfs_lock);
 	if (on == 0) {
@@ -104,22 +108,46 @@ static void set_dvfs_lock(struct cyttsp4_mt_data *md, uint32_t on)
 			schedule_delayed_work(&md->work_dvfs_off,msecs_to_jiffies(TOUCH_BOOSTER_OFF_TIME));
 			printk(KERN_INFO "[TSP] DVFS_touch_release\n");
 		}
-	} else if (on == 1) {
+	} else if (on > 0) {
 		cancel_delayed_work(&md->work_dvfs_off);
-		if (!md->dvfs_lock_status) {
-			ret = set_freq_limit(DVFS_TOUCH_ID, 1008000);
-			if (ret < 0)
-				printk(KERN_ERR "[TSP] %s: cpu lock failed(%d)\n",__func__, ret);
 
-			md->dvfs_lock_status = true;
-			printk(KERN_INFO "[TSP] DVFS On!\n");
+		if (md->dvfs_old_status != on) {
+			cancel_delayed_work(&md->work_dvfs_chg);
+				if (md->dvfs_freq != MIN_TOUCH_LIMIT) {
+					ret = set_freq_limit(DVFS_TOUCH_ID,
+							MIN_TOUCH_LIMIT);
+					md->dvfs_freq = MIN_TOUCH_LIMIT;
+
+					if (ret < 0)
+						printk(KERN_ERR
+							"%s: cpu first lock failed(%d)\n",
+							__func__, ret);
+
+			schedule_delayed_work(&md->work_dvfs_chg,
+				msecs_to_jiffies(TOUCH_BOOSTER_CHG_TIME));
+
+				md->dvfs_lock_status = true;
+			}
 		}
-	} else if (on == 2) {
-		cancel_delayed_work(&md->work_dvfs_off);
-		schedule_work(&md->work_dvfs_off.work);
-		printk(KERN_INFO "[TSP] DVFS_touch_all_finger_release\n");
+	} else if (on < 0) {
+		if (md->dvfs_lock_status) {
+			cancel_delayed_work(&md->work_dvfs_off);
+			cancel_delayed_work(&md->work_dvfs_chg);
+			schedule_work(&md->work_dvfs_off.work);
+		}
 	}
+	md->dvfs_old_status = on;
 	mutex_unlock(&md->dvfs_lock);
+}
+
+static void init_dvfs (struct cyttsp4_mt_data *md)
+{
+	mutex_init(&md->dvfs_lock);
+	md->dvfs_boost_mode = DVFS_STAGE_DUAL;
+
+	INIT_DELAYED_WORK(&md->work_dvfs_off, set_dvfs_off);
+	INIT_DELAYED_WORK(&md->work_dvfs_chg, change_dvfs_lock);
+	md->dvfs_lock_status = false;
 }
 #endif
 
@@ -206,13 +234,12 @@ static void cyttsp4_get_touch(struct cyttsp4_mt_data *md,
 				touch->abs[CY_TCH_Y];
 	}
 
-/*	printk("%s: flip=%s inv-x=%s inv-y=%s x=%04X(%d) y=%04X(%d)\n",
+	dev_vdbg(dev, "%s: flip=%s inv-x=%s inv-y=%s x=%04X(%d) y=%04X(%d)\n",
 		__func__, flipped ? "true" : "false",
 		md->pdata->flags & CY_FLAG_INV_X ? "true" : "false",
 		md->pdata->flags & CY_FLAG_INV_Y ? "true" : "false",
 		touch->abs[CY_TCH_X], touch->abs[CY_TCH_X],
 		touch->abs[CY_TCH_Y], touch->abs[CY_TCH_Y]);
-*/
 }
 
 static void cyttsp4_get_mt_touches(struct cyttsp4_mt_data *md, int num_cur_tch)
@@ -231,25 +258,6 @@ static void cyttsp4_get_mt_touches(struct cyttsp4_mt_data *md, int num_cur_tch)
 	for (i = 0; i < num_cur_tch; i++) {
 		cyttsp4_get_touch(md, &tch, si->xy_data +
 			(i * si->si_ofs.tch_rec_size));
-
-		if (tch.abs[CY_TCH_E] == CY_EV_LIFTOFF) {
-			printk("%s: tcn=%d e=%d RELEASE\n",__func__, num_cur_tch, tch.abs[CY_TCH_E]);
-#if defined(TSP_BOOSTER)
-			if(num_cur_tch==1){
-				set_dvfs_lock(md, 0);
-			}
-#endif
-//			ids[t] = 3; // release event
-			goto cyttsp4_get_mt_touches_pr_tch;
-		}
-
-		if (tch.abs[CY_TCH_E] == CY_EV_TOUCHDOWN){
-			printk("%s: tcn=%d e=%d PRESS \n",__func__, num_cur_tch,  tch.abs[CY_TCH_E]);
-#if defined(TSP_BOOSTER)
-				set_dvfs_lock(md, 1);
-#endif
-		}
-
 		if ((tch.abs[CY_TCH_T] < md->pdata->frmwrk->abs
 			[(CY_ABS_ID_OST * CY_NUM_ABS_SET) + CY_MIN_OST]) ||
 			(tch.abs[CY_TCH_T] > md->pdata->frmwrk->abs
@@ -279,21 +287,29 @@ static void cyttsp4_get_mt_touches(struct cyttsp4_mt_data *md, int num_cur_tch)
 		if (sig != CY_IGNORE_VALUE) {
 			t = tch.abs[CY_TCH_T] - md->pdata->frmwrk->abs
 				[(CY_ABS_ID_OST * CY_NUM_ABS_SET) + CY_MIN_OST];
-
-			if (tch.abs[CY_TCH_E] == CY_EV_NO_EVENT) {
-				// printk("%s: tcn=%d e=%d Ignored\n",__func__, num_cur_tch, tch.abs[CY_TCH_E]);
-				ids[t] = 2; // wait, not event
-				goto cyttsp4_get_mt_touches_pr_tch;
-			}
-
 			if (tch.abs[CY_TCH_E] == CY_EV_LIFTOFF) {
 				dev_dbg(dev, "%s: t=%d e=%d lift-off\n",
 					__func__, t, tch.abs[CY_TCH_E]);
+#if defined(TSP_BOOSTER)
+			if(num_cur_tch==1){
+				set_dvfs_lock(md, 0);
+			}
+#endif
 				goto cyttsp4_get_mt_touches_pr_tch;
+			}
+
+			if (tch.abs[CY_TCH_E] == CY_EV_TOUCHDOWN){
+#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
+				printk("%s: tcn=[%d] e=%d PRESS x=%d, y=%d \n",__func__,
+					num_cur_tch,  tch.abs[CY_TCH_E], tch.abs[CY_TCH_X], tch.abs[CY_TCH_Y]);
+#endif
+#if defined(TSP_BOOSTER)
+				set_dvfs_lock(md, 1);
+#endif
 			}
 			if (md->mt_function.input_report)
 				md->mt_function.input_report(md->input, sig, t);
-			ids[t] = 1;	// event
+			ids[t] = true;
 		}
 
 		/* Check if hover on this touch */
@@ -334,10 +350,9 @@ static void cyttsp4_get_mt_touches(struct cyttsp4_mt_data *md, int num_cur_tch)
                           if (sig == CY_IGNORE_VALUE)
                                 continue;
 
-				// KEVI added +
 #ifdef HAND_BLADE_ACTION
 				if (sig == ABS_MT_TOUCH_MAJOR) {
-					if (palm_detected == 1){
+					if ((palm_detected == 1) || (palm_keeping == 1)){
 						input_report_abs(md->input, ABS_MT_WIDTH_MAJOR, 0xca);			// 202
 						input_report_abs(md->input, ABS_MT_TOUCH_MAJOR, 0xca);			// 202
 					}
@@ -347,7 +362,6 @@ static void cyttsp4_get_mt_touches(struct cyttsp4_mt_data *md, int num_cur_tch)
 						{
 							input_report_abs(md->input, ABS_MT_WIDTH_MAJOR, 0x70);		// 100
 							input_report_abs(md->input, ABS_MT_TOUCH_MAJOR, 0x90);		// 144
-							surface_touch_check=1;
 						}
 						else {
 						      input_report_abs(md->input, ABS_MT_WIDTH_MAJOR,	tch.abs[CY_TCH_MAJ + j]);
@@ -356,7 +370,7 @@ static void cyttsp4_get_mt_touches(struct cyttsp4_mt_data *md, int num_cur_tch)
 					}
 				}
 				else if (sig == ABS_MT_TOUCH_MINOR) {
-					if (palm_detected == 1){
+					if ((palm_detected == 1) || (palm_keeping == 1)){
 						input_report_abs(md->input, ABS_MT_TOUCH_MINOR, 0xca);			// 202
 					}
 					else
@@ -364,7 +378,6 @@ static void cyttsp4_get_mt_touches(struct cyttsp4_mt_data *md, int num_cur_tch)
 						if (tch.abs[CY_TCH_MAJ + j] == 30) {
 							//input_report_abs(md->input, ABS_MT_TOUCH_MINOR, 0x50);		// 80  too big
 							input_report_abs(md->input, ABS_MT_TOUCH_MINOR, 0x28);		// 40
-							surface_touch_check=1;
 						}
 						else {
 						input_report_abs(md->input, ABS_MT_TOUCH_MINOR,	tch.abs[CY_TCH_MAJ + j]);
@@ -372,21 +385,17 @@ static void cyttsp4_get_mt_touches(struct cyttsp4_mt_data *md, int num_cur_tch)
 			}
 		}
 				else if (sig == ABS_MT_ORIENTATION) {
-					if (palm_detected == 1){
+					if ((palm_detected == 1) || (palm_keeping == 1)){
 						input_report_abs(md->input, ABS_MT_ANGLE, 90);
 					}
 					else {
-						if(surface_touch_check==1){	//c.h.hong : Baffin CTC Surface touch cpature problm. 
-							input_report_abs(md->input, ABS_MT_ANGLE, tch.abs[CY_TCH_MAJ + j]);
-							//printk("[TSP] %s : ABS_MT_ANGLE num_cur_tch=%d\n",__func__,num_cur_tch);
-							surface_touch_check=0;
-						}
+						input_report_abs(md->input, ABS_MT_ANGLE, tch.abs[CY_TCH_MAJ + j]);
 					}
 				}
 #endif
 			}
 #ifdef PALM_ACTION
-			input_report_abs(md->input, ABS_MT_PALM, palm_detected);
+			input_report_abs(md->input, ABS_MT_PALM, palm_keeping);
 #endif
 
 		}
@@ -395,9 +404,8 @@ static void cyttsp4_get_mt_touches(struct cyttsp4_mt_data *md, int num_cur_tch)
 		mt_sync_count++;
 
 cyttsp4_get_mt_touches_pr_tch:
-		if (si->si_ofs.tch_rec_size > CY_TMA1036_TCH_REC_SIZE){
-			if (dump_enable_flag != 0){
-			printk(
+		if (si->si_ofs.tch_rec_size > CY_TMA1036_TCH_REC_SIZE)
+			dev_dbg(dev,
 				"%s: t=%d x=%d y=%d z=%d M=%d m=%d o=%d e=%d\n",
 				__func__, t,
 				tch.abs[CY_TCH_X],
@@ -407,17 +415,14 @@ cyttsp4_get_mt_touches_pr_tch:
 				tch.abs[CY_TCH_MIN],
 				tch.abs[CY_TCH_OR],
 				tch.abs[CY_TCH_E]);
-			}
-		}
-		else{
-			printk(
+		else
+			dev_dbg(dev,
 				"%s: t=%d x=%d y=%d z=%d e=%d\n", __func__,
 				t,
 				tch.abs[CY_TCH_X],
 				tch.abs[CY_TCH_Y],
 				tch.abs[CY_TCH_P],
 				tch.abs[CY_TCH_E]);
-		}
 	}
 
 	if (md->mt_function.final_sync)
@@ -515,6 +520,7 @@ static int cyttsp4_xy_worker(struct cyttsp4_mt_data *md)
 	if (IS_LARGE_AREA(tt_stat)) {
 		dev_dbg(dev, "%s: Large area detected\n", __func__);
 		palm_detected = 1;
+		palm_keeping = 1;
 	}
 	else {
 		dev_dbg(dev, "%s: Large area released\n", __func__);
@@ -545,7 +551,11 @@ static int cyttsp4_xy_worker(struct cyttsp4_mt_data *md)
 	if (num_cur_tch)
 		cyttsp4_get_mt_touches(md, num_cur_tch);
 	else
+	{
+		palm_keeping = 0;
 		cyttsp4_lift_all(md);
+	}
+	dev_dbg(dev, "%s: palm_keeping = %d\n", __func__, palm_keeping);
 
 	dev_vdbg(dev, "%s: done\n", __func__);
 	rc = 0;
@@ -558,7 +568,7 @@ static int cyttsp4_mt_attention(struct cyttsp4_device *ttsp)
 {
 	struct device *dev = &ttsp->dev;
 	struct cyttsp4_mt_data *md = dev_get_drvdata(dev);
-	int rc;
+	int rc = 0;
 
 	dev_vdbg(dev, "%s\n", __func__);
 
@@ -639,7 +649,7 @@ static void cyttsp4_mt_early_suspend(struct early_suspend *h)
 	pm_runtime_put(dev);
 
 #if defined(TSP_BOOSTER)
-	set_dvfs_lock(md, 2);
+	set_dvfs_lock(md, -1);
 	printk(KERN_INFO "[TSP] dvfs_lock free.\n ");
 #endif
 
@@ -900,10 +910,7 @@ static int cyttsp4_mt_probe(struct cyttsp4_device *ttsp)
 #endif
 
 #if defined(TSP_BOOSTER)
-	mutex_init(&md->dvfs_lock);
-	INIT_DELAYED_WORK(&md->work_dvfs_off, set_dvfs_off);
-	INIT_DELAYED_WORK(&md->work_dvfs_chg, change_dvfs_lock);
-	md->dvfs_lock_status = false;
+	init_dvfs(md);
 #endif
 	dev_dbg(dev, "%s: OK\n", __func__);
 	return 0;

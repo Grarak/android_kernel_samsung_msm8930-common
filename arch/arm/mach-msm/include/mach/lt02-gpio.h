@@ -21,7 +21,7 @@
  */
 
 /* MSM8930 GPIO */
-//#define	GPIO_CAM_IO_EN			0
+#define	GPIO_CAM_IO_EN			0
 #define	GPIO_MSM_FLASH_NOW		3
 #define	GPIO_SUB_CAM_MCLK		4
 #define	GPIO_MAIN_CAM_MCLK		5
@@ -37,6 +37,10 @@
 #define GPIO_I2C_DATA_AF			51
 #define GPIO_I2C_CLK_AF				0
 
+#if defined(CONFIG_ADC_STMPE811)
+#define GPIO_ADC_SDA		71
+#define GPIO_ADC_SCL		72
+#endif
 
 #define GPIO_UART_RXD			23
 #define GPIO_HOME_KEY		35
@@ -107,10 +111,14 @@
 #define GPIO_TOUCHKEY_I2C_SCL		9
 
 /* BATTERY */
-#define GPIO_BATT_INT                   7
+/*#define GPIO_BATT_INT                   7*/
+#define GPIO_TA_DET 43
 #define GPIO_FUELGAUGE_I2C_SDA  101
 #define GPIO_FUELGAUGE_I2C_SCL  100
 #define GPIO_FUEL_INT               98
+#if defined(CONFIG_MACH_LT02_ATT) || defined(CONFIG_MACH_LT02_SPR) || defined(CONFIG_MACH_LT02_TMO)
+#define GPIO_VBATT_IF		67
+#endif
 /*#define GPIO_CHARGER_CHG_EN             82*/
 /*#define GPIO_CHARGER_CHG_nSTAT  150*/
 
@@ -162,6 +170,20 @@
 #define GPIO_OTG_TEST		150
 #define GPIO_OVP_CTRL		PM8038_GPIO_PM_TO_SYS(15)
 
+
+
+
+//#define GPIO_NFC_IRQ                    106
+//#define GPIO_NFC_EN                     144
+//#define GPIO_NFC_FIRMWARE                       92
+//#define GPIO_NFC_CLK_REQ                90
+//#define GPIO_NFC_SDA                    95
+//#define GPIO_NFC_SCL                    96
+//#define GPIO_PM_WCD9304_RESET           PM8917_GPIO_PM_TO_SYS(29)
+
+
+
+
 #if defined(CONFIG_WCD9304_CLK_9600)
 #define CLK_REVISION 0
 #endif
@@ -185,3 +207,4 @@ enum {
 	BOARD_REV15,
 	GPIO_REV_MAX,
 };
+

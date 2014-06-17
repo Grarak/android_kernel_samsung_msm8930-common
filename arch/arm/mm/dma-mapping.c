@@ -336,7 +336,7 @@ early_param("coherent_pool", early_coherent_pool);
  */
 static int __init coherent_init(void)
 {
-	pgprot_t prot = pgprot_dmacoherent(PAGE_KERNEL);
+	pgprot_t prot = pgprot_dmacoherent(pgprot_kernel);
 	size_t size = coherent_pool_size;
 	struct page *page;
 	void *ptr;
@@ -746,7 +746,7 @@ static void *__dma_alloc(struct device *dev, size_t size, dma_addr_t *handle,
 void *arm_dma_alloc(struct device *dev, size_t size, dma_addr_t *handle,
 		    gfp_t gfp, struct dma_attrs *attrs)
 {
-	pgprot_t prot = __get_dma_pgprot(attrs, PAGE_KERNEL);
+	pgprot_t prot = __get_dma_pgprot(attrs, pgprot_kernel);
 	void *memory;
 	bool no_kernel_mapping = dma_get_attr(DMA_ATTR_NO_KERNEL_MAPPING,
 					attrs);
@@ -834,15 +834,15 @@ static void dma_cache_maint_page(struct page *page, unsigned long offset,
 		page = pfn_to_page(pfn);
 
 		if (PageHighMem(page)) {
-			if (len + offset > PAGE_SIZE)
+			if (len + offset > PAGE_SIZE) {
+				if (offset >= PAGE_SIZE) {
+					page += offset / PAGE_SIZE;
+					offset %= PAGE_SIZE;
+				}
 				len = PAGE_SIZE - offset;
-			vaddr = kmap_high_get(page);
-			if (vaddr) {
-				vaddr += offset;
-				op(vaddr, len, dir);
-				kunmap_high(page);
-			} else if (cache_is_vipt()) {
-				/* unmapped pages might still be cached */
+			}
+
+			if (cache_is_vipt_nonaliasing()) {
 				vaddr = kmap_atomic(page);
 				op(vaddr + offset, len, dir);
 				kunmap_atomic(vaddr);
@@ -1261,7 +1261,7 @@ static int __iommu_remove_mapping(struct device *dev, dma_addr_t iova, size_t si
 static void *arm_iommu_alloc_attrs(struct device *dev, size_t size,
 	    dma_addr_t *handle, gfp_t gfp, struct dma_attrs *attrs)
 {
-	pgprot_t prot = __get_dma_pgprot(attrs, PAGE_KERNEL);
+	pgprot_t prot = __get_dma_pgprot(attrs, pgprot_kernel);
 	struct page **pages;
 	void *addr = NULL;
 

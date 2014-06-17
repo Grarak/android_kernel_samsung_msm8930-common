@@ -1043,7 +1043,6 @@ config WCD9306_CODEC
           Enables the WCD9306 core driver. The core driver provides
           read/write capability to registers which are part of the
           WCD9302/6 core and gives the ability to use the WCD9302/6 codec.
-
 config WCD9304_CODEC
         tristate "WCD9304 Codec"
         select SLIMBUS

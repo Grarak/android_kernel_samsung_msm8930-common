@@ -1,4 +1,4 @@
-/*
+ /*
  * drivers/usb/gadget/f_mtp_samsung.c
  *
  * Function Driver for USB MTP,

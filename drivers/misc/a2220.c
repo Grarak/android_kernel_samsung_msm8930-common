@@ -175,7 +175,7 @@ static void a2220_i2c_sw_reset(struct a2220_data *a2220, unsigned int reset_cmd)
 a2220_hw_reset(struct a2220_data *a2220, struct a2220img *img)
 {
 	struct a2220img *vp = img;
-	int rc, i, pass = 0;
+	int rc = 0, i, pass = 0;
 	int remaining;
 	int retry = RETRY_CNT;
 	unsigned char *index;
@@ -268,7 +268,7 @@ int a2220_bootup_init(struct a2220_data *a2220, struct a2220img *pImg)
 	char buf[2];
 	xoclk_control(true);
 
-	pr_info("%s\n", __func__);
+	pr_info("%s()\n",__func__);
 
 	msleep(100);
 	while (retry--) {
@@ -304,7 +304,7 @@ int a2220_bootup_init(struct a2220_data *a2220, struct a2220img *pImg)
 
 		remaining = vp->img_size / i2c_write_size;
 		index = vp->buf;
-		pr_info("%s: starting to load image (%d passes)...\n",
+		pr_debug("%s: starting to load image (%d passes)...\n",
 				__func__,
 				remaining + !!(vp->img_size % i2c_write_size));
 
@@ -323,11 +323,8 @@ int a2220_bootup_init(struct a2220_data *a2220, struct a2220img *pImg)
 					__func__, rc, retry);
 			continue;
 		}
-		pr_info("%s:a2220_bootup_init 7\n", __func__);
 
 		msleep(20); /* Delay time before issue a Sync Cmd */
-
-		pr_info("%s:firmware loaded successfully\n", __func__);
 
 		msleep(200);
 
@@ -337,7 +334,6 @@ int a2220_bootup_init(struct a2220_data *a2220, struct a2220img *pImg)
 					__func__, rc, retry);
 			continue;
 		}
-		pr_info("%s:a2220_bootup_init 8\n", __func__);
 
 		pass = 1;
 		break;
@@ -362,7 +358,6 @@ int a2220_bootup_init(struct a2220_data *a2220, struct a2220img *pImg)
 			pr_err("Audience bypass mode setting Failed\n");
 	}
 
-	pr_info("%s : a2220_bootup_init - finish\n", __func__);
 	xoclk_control(false);
 	return rc;
 }
@@ -371,6 +366,93 @@ static unsigned char phonecall_receiver_nson[] = {
 	0x80, 0x31, 0x00, 0x00,
 };
 
+static unsigned char phonecall_receiver_nsonoff[] = {
+	0x80, 0x17, 0x00, 0x4B,
+	0x80, 0x18, 0x00, 0x03,
+};
+#if defined CONFIG_MACH_SERRANO_ATT
+static unsigned char phonecall_receiver_nsoffon[] = {
+	0x80, 0x17, 0x00, 0x4B,
+	0x80, 0x18, 0x00, 0x07,
+};
+#else
+static unsigned char phonecall_receiver_nsoffon[] = {
+	0x80, 0x17, 0x00, 0x4B,
+	0x80, 0x18, 0x00, 0x06,
+};
+#endif
+static unsigned char phonecall_receiver_nson_exton[] = {
+	0x80, 0x52, 0x00, 0x00,
+	0x80, 0x17, 0x00, 0x09,
+	0x80, 0x18, 0x00, 0x00,
+};
+
+static unsigned char phonecall_receiver_nson_extoff[] = {
+	0x80, 0x52, 0x00, 0x00,
+	0x80, 0x17, 0x00, 0x09,
+	0x80, 0x18, 0x00, 0x01,
+};
+#if defined CONFIG_MACH_SERRANO_ATT
+static unsigned char phonecall_receiver_nson_vol0[] = {
+	0x80, 0x17, 0x00, 0x3D,
+	0x80, 0x18, 0x00, 0x06,
+};
+
+static unsigned char phonecall_receiver_nson_vol1[] = {
+	0x80, 0x17, 0x00, 0x3D,
+	0x80, 0x18, 0x00, 0x09,
+};
+#else
+static unsigned char phonecall_receiver_nson_vol0[] = {
+	0x80, 0x17, 0x00, 0x3D,
+	0x80, 0x18, 0x00, 0x0F,
+};
+
+static unsigned char phonecall_receiver_nson_vol1[] = {
+	0x80, 0x17, 0x00, 0x3D,
+	0x80, 0x18, 0x00, 0x0F,
+};
+#endif
+static unsigned char phonecall_receiver_nson_vol2[] = {
+	0x80, 0x17, 0x00, 0x3D,
+	0x80, 0x18, 0x00, 0x0C,
+};
+
+static unsigned char phonecall_receiver_nson_vol3[] = {
+	0x80, 0x17, 0x00, 0x3D,
+	0x80, 0x18, 0x00, 0x09,
+};
+
+static unsigned char phonecall_receiver_nson_vol4[] = {
+	0x80, 0x17, 0x00, 0x3D,
+	0x80, 0x18, 0x00, 0x06,
+};
+
+static unsigned char phonecall_receiver_nson_vol5[] = {
+	0x80, 0x17, 0x00, 0x3D,
+	0x80, 0x18, 0x00, 0x03,
+};
+#if defined CONFIG_MACH_SERRANO_ATT
+static unsigned char phonecall_receiver_nson_volmin[] = {
+	0x80, 0x17, 0x00, 0x25,
+	0x80, 0x18, 0xFF, 0xFE,
+};
+
+static unsigned char phonecall_receiver_nson_volmax[] = {
+	0x80, 0x17, 0x00, 0x25,
+	0x80, 0x18, 0x00, 0x0C,
+};
+#else
+static unsigned char phonecall_receiver_nson_volmin[] = {
+	0x80, 0x17, 0x00, 0x25,
+	0x80, 0x18, 0x00, 0x06,
+};
+
+static unsigned char phonecall_receiver_nson_volmax[] = {
+	0x80, 0x17, 0x00, 0x25,
+	0x80, 0x18, 0x00, 0x11,
+};
+#endif
 static unsigned char ft_loopback[] = {
 	0x80, 0x31, 0x00, 0x00,
 	0x80, 0x1B, 0x00, 0x00,
@@ -408,7 +490,11 @@ static unsigned char ft_loopback[] = {
 };
 
 static unsigned char phonecall_receiver_nson_wb[] = {
+#ifdef CONFIG_MACH_M2
+	0x80, 0x31, 0x00, 0x02,
+#else
 	0x80, 0x31, 0x00, 0x01,
+#endif
 };
 
 static unsigned char phonecall_receiver_nsoff[] = {
@@ -672,7 +758,7 @@ int a2220_filter_vp_cmd(int cmd, int mode)
 		break;
 	}
 
-	pr_info("%s: %x filtered = %x, a2220_NS_state %d, mode %d\n", __func__,
+	pr_debug("%s: %x filtered = %x, a2220_NS_state %d, mode %d\n", __func__,
 			cmd, filtered_cmd, a2220_NS_state, mode);
 
 	return filtered_cmd;
@@ -707,6 +793,54 @@ int a2220_set_config(struct a2220_data *a2220, char newid, int mode)
 	case A2220_PATH_INCALL_RECEIVER_NSON:
 		i2c_cmds = phonecall_receiver_nson;
 		size = sizeof(phonecall_receiver_nson);
+		break;
+	case A2220_PATH_INCALL_RECEIVER_NSONOFF:
+		i2c_cmds = phonecall_receiver_nsonoff;
+		size = sizeof(phonecall_receiver_nsonoff);
+		break;
+	case A2220_PATH_INCALL_RECEIVER_NSOFFON:
+		i2c_cmds = phonecall_receiver_nsoffon;
+		size = sizeof(phonecall_receiver_nsoffon);
+		break;
+	case A2220_PATH_INCALL_RECEIVER_EXTON:
+		i2c_cmds = phonecall_receiver_nson_exton;
+		size = sizeof(phonecall_receiver_nson_exton);
+		break;
+	case A2220_PATH_INCALL_RECEIVER_EXTOFF:
+		i2c_cmds = phonecall_receiver_nson_extoff;
+		size = sizeof(phonecall_receiver_nson_extoff);
+		break;
+	case A2220_PATH_INCALL_RECEIVER_VOL0:
+		i2c_cmds = phonecall_receiver_nson_vol0;
+		size = sizeof(phonecall_receiver_nson_vol0);
+		break;
+	case A2220_PATH_INCALL_RECEIVER_VOL1:
+		i2c_cmds = phonecall_receiver_nson_vol1;
+		size = sizeof(phonecall_receiver_nson_vol1);
+		break;
+	case A2220_PATH_INCALL_RECEIVER_VOL2:
+		i2c_cmds = phonecall_receiver_nson_vol2;
+		size = sizeof(phonecall_receiver_nson_vol2);
+		break;
+	case A2220_PATH_INCALL_RECEIVER_VOL3:
+		i2c_cmds = phonecall_receiver_nson_vol3;
+		size = sizeof(phonecall_receiver_nson_vol3);
+		break;
+	case A2220_PATH_INCALL_RECEIVER_VOL4:
+		i2c_cmds = phonecall_receiver_nson_vol4;
+		size = sizeof(phonecall_receiver_nson_vol4);
+		break;
+	case A2220_PATH_INCALL_RECEIVER_VOL5:
+		i2c_cmds = phonecall_receiver_nson_vol5;
+		size = sizeof(phonecall_receiver_nson_vol5);
+		break;
+	case A2220_PATH_INCALL_RECEIVER_NEA_VOLMIN:
+		i2c_cmds = phonecall_receiver_nson_volmin;
+		size = sizeof(phonecall_receiver_nson_volmin);
+		break;
+	case A2220_PATH_INCALL_RECEIVER_NEA_VOLMAX:
+		i2c_cmds = phonecall_receiver_nson_volmax;
+		size = sizeof(phonecall_receiver_nson_volmax);
 		break;
 	case A2220_PATH_INCALL_RECEIVER_NSON_WB:
 		i2c_cmds = phonecall_receiver_nson_wb;
@@ -814,11 +948,11 @@ int a2220_set_config(struct a2220_data *a2220, char newid, int mode)
 	a2220_current_config = newid;
 
 	pr_info("%s: change to mode %d\n", __func__, newid);
-	pr_info("%s: block write start (size = %d)\n", __func__, size);
+	pr_debug("%s: block write start (size = %d)\n", __func__, size);
 	for (i = 1; i <= size; i++) {
-		pr_info("%x ", *(i2c_cmds + i - 1));
+		pr_debug("%x ", *(i2c_cmds + i - 1));
 		if (!(i % 4))
-			pr_info("\n");
+			pr_debug("\n");
 	}
 
 	pMsg = (unsigned char *)&msg;
@@ -857,7 +991,10 @@ int execute_cmdmsg(struct a2220_data *a2220, unsigned int msg)
 	unsigned char msgbuf[4];
 	unsigned char chkbuf[4];
 	unsigned int sw_reset = 0;
-
+#ifndef CONFIG_MACH_M2
+	if (msg == A100_msg_Sleep)
+		return 0;
+#endif
 	sw_reset = ((A100_msg_Reset << 16) | RESET_IMMEDIATE);
 
 	msgbuf[0] = (msg >> 24) & 0xFF;
@@ -865,7 +1002,7 @@ int execute_cmdmsg(struct a2220_data *a2220, unsigned int msg)
 	msgbuf[2] = (msg >> 8) & 0xFF;
 	msgbuf[3] = msg & 0xFF;
 
-	pr_info("%s : execute_cmdmsg :: %x %x %x %x\n" , __func__,
+	pr_info("%s : a2220 - execute_cmdmsg :: %x %x %x %x\n" , __func__,
 			msgbuf[0] , msgbuf[1] , msgbuf[2] , msgbuf[3]);
 	memcpy(chkbuf, msgbuf, 4);
 
@@ -883,7 +1020,7 @@ int execute_cmdmsg(struct a2220_data *a2220, unsigned int msg)
 		return rc;
 	}
 
-	pr_info("execute_cmdmsg + 1\n");
+	pr_debug("execute_cmdmsg + 1\n");
 	/* We don't need to get Ack after sending out a suspend command */
 	if (msg == A100_msg_Sleep) {
 		pr_info("%s : ...go to suspend first\n", __func__);
@@ -891,7 +1028,10 @@ int execute_cmdmsg(struct a2220_data *a2220, unsigned int msg)
 
 		return rc;
 	}
-	pr_info("execute_cmdmsg + 2\n");
+	pr_debug("execute_cmdmsg + 2\n");
+#if defined CONFIG_MACH_SERRANO_ATT
+	usleep(2000);
+#endif
 
 	retries = POLLING_RETRY_CNT;
 	while (retries--) {
@@ -904,31 +1044,31 @@ int execute_cmdmsg(struct a2220_data *a2220, unsigned int msg)
 			continue;
 		}
 
-		pr_info("execute_cmdmsg + 3\n");
+		pr_debug("execute_cmdmsg + 3\n");
 
 		if (msgbuf[0] == 0x80  && msgbuf[1] == chkbuf[1]) {
 			pass = 1;
-			pr_info("execute_cmdmsg + 4\n");
-			pr_info("got ACK\n");
+			pr_debug("execute_cmdmsg + 4\n");
+			pr_debug("got ACK\n");
 			break;
 		} else if (msgbuf[0] == 0xff && msgbuf[1] == 0xff) {
 			pr_err("%s: illegal cmd %08x\n", __func__, msg);
 			rc = -EINVAL;
-			pr_info("execute_cmdmsg + 5\n");
+			pr_debug("execute_cmdmsg + 5\n");
 		} else if (msgbuf[0] == 0x00 && msgbuf[1] == 0x00) {
-			pr_info("%s: not ready (%d retries)\n", __func__,
+			pr_debug("%s: not ready (%d retries)\n", __func__,
 					retries);
-			pr_info("execute_cmdmsg + 6\n");
+			pr_debug("execute_cmdmsg + 6\n");
 			rc = -EBUSY;
 		} else {
-			pr_info("%s: cmd/ack mismatch: (%d retries left)\n",
+			pr_debug("%s: cmd/ack mismatch: (%d retries left)\n",
 					__func__,
 					retries);
-			pr_err("%s: msgbuf[0] = %x\n", __func__, msgbuf[0]);
-			pr_err("%s: msgbuf[1] = %x\n", __func__, msgbuf[1]);
-			pr_err("%s: msgbuf[2] = %x\n", __func__, msgbuf[2]);
-			pr_err("%s: msgbuf[3] = %x\n", __func__, msgbuf[3]);
-			pr_err("execute_cmdmsg + 7\n");
+			pr_debug("%s: msgbuf[0] = %x\n", __func__, msgbuf[0]);
+			pr_debug("%s: msgbuf[1] = %x\n", __func__, msgbuf[1]);
+			pr_debug("%s: msgbuf[2] = %x\n", __func__, msgbuf[2]);
+			pr_debug("%s: msgbuf[3] = %x\n", __func__, msgbuf[3]);
+			pr_debug("execute_cmdmsg + 7\n");
 			rc = -EBUSY;
 		}
 		msleep(20); /* use polling */
@@ -940,7 +1080,7 @@ int execute_cmdmsg(struct a2220_data *a2220, unsigned int msg)
 		a2220_i2c_sw_reset(a2220, sw_reset);
 	}
 
-	pr_info("execute_cmdmsg - finish\n");
+	pr_debug("execute_cmdmsg - finish\n");
 
 	return rc;
 }
@@ -965,7 +1105,7 @@ static int a2220_set_mic_state(struct a2220_data *a2220, char miccase)
 		cmd_msg = 0x80260006;
 		break;
 	default:
-		pr_info("%s: invalid input %d\n", __func__, miccase);
+		pr_err("%s: invalid input %d\n", __func__, miccase);
 		rc = -EINVAL;
 		break;
 	}
@@ -997,7 +1137,6 @@ static int thread_start(void *a2220)
 {
 	int rc = 0;
 	struct a2220img img;
-	pr_info("%s\n", __func__);
 	img.buf = a2220_firmware_buf;
 	img.img_size = sizeof(a2220_firmware_buf);
 	rc = a2220_bootup_init(a2220, &img);
@@ -1156,8 +1295,7 @@ static int a2220_probe(
 	struct a2220_data *a2220;
 	static struct a2220_platform_data *pdata;
 
-	pr_info("%s\n", __func__);
-
+	pr_info("%s()\n",__func__);
 	pdata = client->dev.platform_data;
 	if (pdata == NULL) {
 		pr_err("%s: platform data is NULL\n", __func__);
@@ -1210,7 +1348,6 @@ static int a2220_probe(
 		goto err_misc_register_failed;
 	}
 	kthread_run(thread_start, a2220, "thread_start");
-	pr_info("a2220_probe - finish\n");
 	return 0;
 
 err_misc_register_failed:

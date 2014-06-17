@@ -82,6 +82,9 @@
 
 #define MPU6500_CALIB_FILENAME	"//data//mpu6500.cal"
 
+#define MPU6500_IRQ_ENABLE_STAT		1
+#define MPU6500_IRQ_DISABLE_STAT	2
+
 struct motion_int_data {
 	unsigned char pwr_mnt[2];
 	unsigned char cfg;
@@ -121,6 +124,7 @@ struct mpu6500_input_data {
 	int current_delay;
 
 	int gyro_bias[3];
+	int irq_flag;
 
 	u8 mode;
 
@@ -571,7 +575,7 @@ static void mpu6500_input_report_fifo_data(struct mpu6500_input_data *data)
 		if (((event >> 16) & 0xff) & INT_SRC_DISPLAY_ORIENT) {
 			u8 so_data = ((DMP_MASK_DIS_ORIEN & (event & 0xff)) >>
 				      DMP_DIS_ORIEN_SHIFT);
-			u8 so_event;
+			u8 so_event = 0;
 			printk(KERN_INFO "DISPLAY_ORIENTATION : %d\n", so_data);
 
 			if (so_data == 0) /* 0 degree */
@@ -1575,7 +1579,7 @@ static ssize_t mpu6500_input_gyro_self_test_show(struct device *dev,
 	struct mpu6500_input_data *data = input_get_drvdata(input_data);
 
 	int scaled_gyro_bias[3] = { 0 };	//absolute gyro bias scaled by 1000 times. (gyro_bias x 1000)
-	int scaled_gyro_rms[3] = { 0 };	//absolute gyro rms scaled by 1000 times. (gyro_bias x 1000)      
+	int scaled_gyro_rms[3] = { 0 };	//absolute gyro rms scaled by 1000 times. (gyro_bias x 1000)
 	int packet_count[3] = { 0 };
 	int result;
 
@@ -1874,11 +1878,25 @@ static ssize_t mpu6500_input_reactive_enable_store(struct device *dev,
 
 #ifdef CONFIG_INPUT_MPU6500_POLLING
 	if (!value) {
-		disable_irq_wake(gb_mpu_data->client->irq);
-		disable_irq(gb_mpu_data->client->irq);
+		if(gb_mpu_data->irq_flag == MPU6500_IRQ_ENABLE_STAT) {
+			disable_irq_wake(gb_mpu_data->client->irq);
+			disable_irq(gb_mpu_data->client->irq);
+
+			pr_info("[SENSOR - %s] disable irq\n", __func__);
+
+			gb_mpu_data->irq_flag = MPU6500_IRQ_DISABLE_STAT;
+		} else
+			pr_err("[SENSOR - %s] irq disable reject\n", __func__);
 	} else {
-		enable_irq(gb_mpu_data->client->irq);
-		enable_irq_wake(gb_mpu_data->client->irq);
+		if(gb_mpu_data->irq_flag == MPU6500_IRQ_DISABLE_STAT) {
+			enable_irq(gb_mpu_data->client->irq);
+			enable_irq_wake(gb_mpu_data->client->irq);
+
+			pr_info("[SENSOR - %s] enable irq\n", __func__);
+
+			gb_mpu_data->irq_flag =	MPU6500_IRQ_ENABLE_STAT;
+		} else
+			pr_err("[SENSOR - %s] irq enable reject\n", __func__);
 	}
 #endif
 
@@ -1917,7 +1935,7 @@ static ssize_t mpu6500_input_reactive_enable_store(struct device *dev,
 	}	mutex_unlock(&gb_mpu_data->mutex);
 
 	pr_info("%s: onoff = %d, state =%d\n", __func__,
-		atomic_read(&gb_mpu_data->motion_recg_enable),
+		atomic_read(&gb_mpu_data->reactive_enable),
 		atomic_read(&gb_mpu_data->reactive_state));
 	return count;
 }
@@ -2357,7 +2375,7 @@ static int __devinit mpu6500_input_probe(struct i2c_client *client,
 	INIT_DELAYED_WORK(&data->gyro_work, mpu6500_work_func_gyro);
 #endif
 
-	wake_lock_init(&data->reactive_wake_lock, WAKE_LOCK_SUSPEND, 
+	wake_lock_init(&data->reactive_wake_lock, WAKE_LOCK_SUSPEND,
 		"reactive_wake_lock");
 
 	if (client->irq > 0) {
@@ -2377,6 +2395,7 @@ static int __devinit mpu6500_input_probe(struct i2c_client *client,
 		}
 #ifdef CONFIG_INPUT_MPU6500_POLLING
 		disable_irq(client->irq);
+		gb_mpu_data->irq_flag = MPU6500_IRQ_DISABLE_STAT;
 #endif
 	}
 
@@ -2458,7 +2477,13 @@ static int mpu6500_input_suspend(struct device *dev)
 			atomic_read(&data->gyro_enable))
 			mpu6500_input_set_mode(data, MPU6500_MODE_SLEEP);
 	} else {
-		disable_irq(client->irq);
+		if(gb_mpu_data->irq_flag == MPU6500_IRQ_ENABLE_STAT) {
+			pr_info("[SENSOR - %s] irq disable\n", __func__);
+			disable_irq(client->irq);
+			gb_mpu_data->irq_flag = MPU6500_IRQ_DISABLE_STAT;
+		} else {
+			pr_info("[SENSOR - %s] disable irq reject\n", __func__);
+		}
 	}
 	return 0;
 }
@@ -2483,7 +2508,12 @@ static int mpu6500_input_resume(struct device *dev)
 			atomic_read(&data->gyro_enable))
 			mpu6500_input_set_mode(data, MPU6500_MODE_NORMAL);
 	} else {
-		enable_irq(client->irq);
+		if(gb_mpu_data->irq_flag == MPU6500_IRQ_DISABLE_STAT) {
+			pr_info("[SENSOR - %s] irq enable\n", __func__);
+			enable_irq(client->irq);
+			gb_mpu_data->irq_flag = MPU6500_IRQ_ENABLE_STAT;
+		} else
+			pr_info("[SENSOR - %s] enable irq reject\n", __func__);
 	}
 #ifdef CONFIG_INPUT_MPU6500_POLLING
 		if (atomic_read(&data->accel_enable))

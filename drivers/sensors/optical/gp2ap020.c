@@ -180,13 +180,15 @@ int lightsensor_get_adc(struct gp2a_data *data)
 	int D1_data;
 	int lx = 0;
 	u8 value;
-	int light_alpha;
-	int light_beta;
+	int light_alpha = 0;
+	int light_beta = 0;
 	static int lx_prev;
-	int ret = 0;
+	int ret ;
 	int d0_boundary = 92;
+#ifndef  CONFIG_MACH_LT02
 	int d0_custom[9] = { 0, };
-
+	int i = 0;
+#endif
 	mutex_lock(&data->data_mutex);
 	ret = gp2a_i2c_read(data, DATA0_LSB, get_data, sizeof(get_data));
 	mutex_unlock(&data->data_mutex);
@@ -195,8 +197,40 @@ int lightsensor_get_adc(struct gp2a_data *data)
 	D0_raw_data = (get_data[1] << 8) | get_data[0]; /* clear */
 	D1_raw_data = (get_data[3] << 8) | get_data[2]; /* IR */
 	if (data->pdata->version) { /* GP2AP 030 */
+#ifdef  CONFIG_MACH_LT02
+		d0_boundary = 91;
+		if (100 * D1_raw_data <= 40 * D0_raw_data) {
+			light_alpha = 861;
+			light_beta = 0;
+		} else if (100 * D1_raw_data <= 62 * D0_raw_data) {
+			light_alpha = 2269;
+			light_beta = 3521;
+		} else if (100 * D1_raw_data <=d0_boundary * D0_raw_data) {
+			if( (D0_raw_data < 400) && (data->lightsensor_mode == 0 ) ) {
+				light_alpha = 421;
+				light_beta = 455;
+			}else if( (D0_raw_data < 600) && (data->lightsensor_mode == 0 ) ) {
+				light_alpha = 463;
+				light_beta = 500;
+			}else if( (D0_raw_data < 1700) && (data->lightsensor_mode == 0 ) ) {
+				light_alpha = 526;
+				light_beta = 568;
+			}else if( (D0_raw_data < 2200) && (data->lightsensor_mode == 0 ) ) {
+				light_alpha = 568;
+				light_beta = 614;
+			}else if( (D0_raw_data < 3500) && (data->lightsensor_mode == 0 ) ) {
+				light_alpha = 652;
+				light_beta = 705;
+			} else {		/* Incandescent High lux */
+				light_alpha = 715;
+				light_beta = 773;
+			}
+		} else {
+			light_alpha = 0;
+			light_beta = 0;
+		}
+#else
 		if (data->pdata->d0_value[0]) {
-			int i = 0;
 			do {
 				d0_custom[i] = data->pdata->d0_value[i];
 			} while (i++ < 8);
@@ -233,6 +267,7 @@ int lightsensor_get_adc(struct gp2a_data *data)
 				light_beta = 0;
 			}
 		}
+#endif
 	} else {   /* GP2AP 020 */
 		if (data->lightsensor_mode) {	/* HIGH_MODE */
 			if (100 * D1_raw_data <= 32 * D0_raw_data) {
@@ -494,15 +529,6 @@ static int proximity_open_calibration(struct gp2a_data  *data)
 	filp_close(cal_filp, current->files);
 done:
 	set_fs(old_fs);
-	//temporary patch
-#if defined(CONFIG_MACH_CRATERTD_CHN_3G)
-
-	if(err<=-2)
-		{
-           data->offset_value=12; 
-		   err=4;
-	    }
-#endif	
 
 	return err;
 }
@@ -568,7 +594,7 @@ static int proximity_do_calibrate(struct gp2a_data  *data,
 		/* calibration result */
 		data->cal_result = 2;
 	}
-    
+
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 
@@ -718,12 +744,11 @@ proximity_enable_store(struct device *dev,
 		msleep(160);
 
 		input = gpio_get_value_cansleep(data->pdata->p_out);
-		if (input == 0) {
-			input_report_abs(data->proximity_input_dev,
-					ABS_DISTANCE, 1);
-			input_sync(data->proximity_input_dev);
-		}
-
+		pr_err("[SENSOR - %s] irq gpio value = %d \n",
+			__func__, (int)input);
+		input_report_abs(data->proximity_input_dev,
+			ABS_DISTANCE, input);
+		input_sync(data->proximity_input_dev);
 		enable_irq(data->irq);
 	}
 	data->proximity_enabled = value;
@@ -807,8 +832,7 @@ static ssize_t proximity_cal_show(struct device *dev,
 	struct gp2a_data *data = dev_get_drvdata(dev);
 	int thresh_hi;
 	unsigned char get_D2_data[2];
-	
-    msleep(20);
+	msleep(20);
 	gp2a_i2c_read(data, PS_HT_LSB, get_D2_data,
 		sizeof(get_D2_data));
 	thresh_hi = (get_D2_data[1] << 8) | get_D2_data[0];
@@ -927,7 +951,7 @@ static ssize_t prox_offset_pass_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct gp2a_data *data = dev_get_drvdata(dev);
-  
+
 	return sprintf(buf, "%d\n", data->cal_result);
 }
 static struct device_attribute dev_attr_proximity_sensor_offset_pass =
@@ -1141,7 +1165,7 @@ static irqreturn_t gp2a_irq_handler(int irq, void *dev_id)
 
 static int gp2a_setup_irq(struct gp2a_data *gp2a)
 {
-	int rc = -EIO;
+	int rc;
 	struct gp2ap020_pdata *pdata = gp2a->pdata;
 	int irq;
 
@@ -1533,6 +1557,7 @@ static int gp2a_i2c_remove(struct i2c_client *client)
 
 static void gp2a_i2c_shutdown(struct i2c_client *client)
 {
+	#if 0// temp for power off alarm not working issue. waiting vendor double check
 	struct gp2a_data *gp2a = i2c_get_clientdata(client);
 	if (unlikely(gp2a == NULL)) {
 		pr_err("%s, gp2a_data is NULL!!!!!\n", __func__);
@@ -1560,7 +1585,7 @@ static void gp2a_i2c_shutdown(struct i2c_client *client)
 
 	mutex_destroy(&gp2a->data_mutex);
 	kfree(gp2a);
-
+ #endif
 }
 
 static int gp2a_i2c_suspend(struct device *dev)
@@ -1574,9 +1599,7 @@ static int gp2a_i2c_suspend(struct device *dev)
 		cancel_delayed_work_sync(&gp2a->light_work);
 
 	mutex_unlock(&gp2a->light_mutex);
-	if (gp2a->proximity_enabled) {
-			enable_irq_wake(gp2a->irq);
-	} else {
+	if (!gp2a->proximity_enabled) {
 		value = 0x00;	/*shutdown mode */
 		gp2a_i2c_write(gp2a, (u8) (COMMAND1), &value);
 
@@ -1595,9 +1618,7 @@ static int gp2a_i2c_resume(struct device *dev)
 
 	int ret = 0;
 
-	if (gp2a->proximity_enabled) {
-			enable_irq_wake(gp2a->irq);
-	} else {
+	if (!gp2a->proximity_enabled) {
 		ret = gpio_request(gp2a->pdata->p_out, "gpio_proximity_out");
 		if (ret)
 			pr_err("%s gpio request %d err\n", __func__, gp2a->irq);

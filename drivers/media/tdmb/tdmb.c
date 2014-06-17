@@ -114,9 +114,12 @@ create_databuffer_fail:
 
 	return false;
 }
+
+static DEFINE_MUTEX(tdmb_lock);
 static bool tdmb_power_off(void)
 {
 	DPRINTK("%s : tdmb_pwr_on(%d)\n", __func__, tdmb_pwr_on);
+	mutex_lock(&tdmb_lock);
 
 	if (tdmb_pwr_on) {
 		tdmbdrv_func->power_off();
@@ -128,6 +131,8 @@ static bool tdmb_power_off(void)
 		tdmb_pwr_on = false;
 	}
 	tdmb_last_ch = 0;
+	mutex_unlock(&tdmb_lock);
+
 	return true;
 }
 
@@ -145,11 +150,8 @@ tdmb_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 	return 0;
 }
 
-static DEFINE_MUTEX(release_lock);
 static int tdmb_release(struct inode *inode, struct file *filp)
 {
-	mutex_lock(&release_lock);
-
 	DPRINTK("tdmb_release\n");
 	tdmb_power_off();
 
@@ -164,7 +166,6 @@ static int tdmb_release(struct inode *inode, struct file *filp)
 		cmd_size = 0;
 	}
 #endif
-	mutex_unlock(&release_lock);
 	return 0;
 }
 
@@ -209,9 +210,6 @@ static int tdmb_mmap(struct file *filp, struct vm_area_struct *vma)
 #endif
 
 	pfn = virt_to_phys(ts_ring) >> PAGE_SHIFT;
-
-//	DPRINTK("vm_start:%lx,ts_ring:%p,size:%x,prot:%lx,pfn:%lx\n",
-//			vma->vm_start, ts_ring, size, vma->vm_page_prot, pfn);
 
 	if (remap_pfn_range(vma, vma->vm_start, pfn, size, vma->vm_page_prot))
 		return -EAGAIN;
@@ -560,7 +558,7 @@ enum {
 static struct input_dev *tdmb_ant_input;
 static int tdmb_check_ant;
 static int ant_prev_status;
-static int irq_ret=-1;
+static int ant_irq_ret=-1;
 
 #define TDMB_ANT_WAIT_INIT_TIME	500000 /* us */
 #define TDMB_ANT_CHECK_DURATION 50000 /* us */
@@ -725,33 +723,33 @@ static irqreturn_t tdmb_ant_det_irq_handler(int irq, void *dev_id)
 bool tdmb_ant_det_irq_set(bool set)
 {
 	bool ret = true;
-	DPRINTK("%s\n", __func__);
+	DPRINTK("%s : set(%d) ant_irq(%d)\n", __func__, set, ant_irq_ret);
 
 	if (set) {
-		if (irq_ret < 0) {
+		if (ant_irq_ret < 0) {
 			ant_prev_status =
 				gpio_get_value_cansleep(gpio_cfg.gpio_ant_det);
 
 			irq_set_irq_type(gpio_cfg.irq_ant_det
 					, IRQ_TYPE_EDGE_BOTH);
 
-			irq_ret = request_irq(gpio_cfg.irq_ant_det
+			ant_irq_ret = request_irq(gpio_cfg.irq_ant_det
 						, tdmb_ant_det_irq_handler
 						, IRQF_DISABLED
 						, "tdmb_ant_det"
 						, NULL);
-			if (irq_ret < 0) {
-				DPRINTK("%s %d\r\n", __func__, irq_ret);
+			if (ant_irq_ret < 0) {
+				DPRINTK("%s %d\r\n", __func__, ant_irq_ret);
 				ret = false;
 			} else {
 				enable_irq_wake(gpio_cfg.irq_ant_det);
 			}
 		}
 	} else {
-		if(irq_ret >= 0) {
+		if(ant_irq_ret >= 0) {
 			disable_irq_wake(gpio_cfg.irq_ant_det);
 			free_irq(gpio_cfg.irq_ant_det, NULL);
-			irq_ret=-1;
+			ant_irq_ret=-1;
 			ret = false;
 		}
 	}
@@ -866,8 +864,8 @@ static int __init tdmb_init(void)
 {
 	int ret;
 
-#ifdef CONFIG_BATTERY_SEC
-	if (is_lpcharging_state()) {
+#ifdef CONFIG_SAMSUNG_LPM_MODE
+	if (poweroff_charging) {
 		pr_info("%s : LPM Charging Mode! return 0\n", __func__);
 		return 0;
 	}

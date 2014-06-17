@@ -345,7 +345,7 @@ int unwind_frame(struct stackframe *frame)
 
 	idx = unwind_find_idx(frame->pc);
 	if (!idx) {
-		pr_debug("unwind: Index not found %08lx\n", frame->pc);
+		pr_warning("unwind: Index not found %08lx\n", frame->pc);
 		return -URC_FAILURE;
 	}
 
@@ -381,7 +381,11 @@ int unwind_frame(struct stackframe *frame)
 			   *ctrl.insn, ctrl.insn);
 		return -URC_FAILURE;
 	}
-
+#ifndef CONFIG_MACH_JF
+	/* Fix for user-stack corruption for better debugging purpose */
+	if (ctrl.entries == 0 || ctrl.byte ==0)
+		return -URC_FAILURE;
+#endif
 	while (ctrl.entries > 0) {
 		int urc = unwind_exec_insn(&ctrl);
 		if (urc < 0)

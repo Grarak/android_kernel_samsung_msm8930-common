@@ -26,8 +26,9 @@
 #define	GPIO_SUB_CAM_MCLK		4
 #define	GPIO_MAIN_CAM_MCLK		5
 #define GPIO_CAM_CORE_EN		6
-#define	GPIO_VT_STBY				18
 #define GPIO_ERR_FG				8
+#define GPIO_ESD_VGH_DET		19
+#define	GPIO_VT_STBY				18
 #define	GPIO_CAM_A_EN				47
 #define	GPIO_MSM_FLASH_CNTL_EN	64
 #define	GPIO_CAM_AF_EN			66
@@ -60,7 +61,7 @@
 #define GPIO_S_LED_I2C_SDA		71
 #define GPIO_S_LED_I2C_SCL		72
 #define GPIO_USB_I2C_SDA		73 
-#define GPIO_USB_I2C_SCL        	74
+#define GPIO_USB_I2C_SCL		74
 #define GPIO_TSP_D_EN			79
 #define GPIO_TSP_A_EN			80
 #define GPIO_VOLUME_DOWN	81
@@ -147,7 +148,7 @@
 #define PMIC_GPIO_2MIC_RST		11
 /*I2C BUS ID*/
 #define I2C_LEDS_BUS_ID			21
-#define GPIO_MAIN_MIC_BIAS_EN   66 
+#define GPIO_MAIN_MIC_BIAS_EN   66
 /* OTG */
 #define GPIO_OTG_TEST		150
 #define GPIO_OVP_CTRL		PM8038_GPIO_PM_TO_SYS(15)

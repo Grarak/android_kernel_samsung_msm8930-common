@@ -32,10 +32,6 @@
 #include <mach/mpm.h>
 #include "gpio-msm-common.h"
 
-#if defined(CONFIG_KEYBOARD_GPIO_EXTENDED_RESUME_EVENT)
-int wakeup_gpio_num = 0;
-#endif
-
 #ifdef CONFIG_GPIO_MSM_V3
 enum msm_tlmm_register {
 	SDC4_HDRV_PULL_CTL = 0x0, /* NOT USED */
@@ -347,8 +343,10 @@ static int msm_gpio_irq_set_type(struct irq_data *d, unsigned int flow_type)
 	mb();
 	spin_unlock_irqrestore(&tlmm_lock, irq_flags);
 
-	if (msm_gpio_irq_extn.irq_set_type)
-		msm_gpio_irq_extn.irq_set_type(d, flow_type);
+	if ((flow_type & IRQ_TYPE_EDGE_BOTH) != IRQ_TYPE_EDGE_BOTH) {
+		if (msm_gpio_irq_extn.irq_set_type)
+			msm_gpio_irq_extn.irq_set_type(d, flow_type);
+	}
 
 	return 0;
 }
@@ -415,10 +413,6 @@ static int msm_gpio_suspend(void)
 	unsigned long irq_flags;
 	unsigned long i;
 
-#if defined(CONFIG_KEYBOARD_GPIO_EXTENDED_RESUME_EVENT)
-    wakeup_gpio_num = 0;
-#endif
-
 	spin_lock_irqsave(&tlmm_lock, irq_flags);
 	for_each_set_bit(i, msm_gpio.enabled_irqs, NR_MSM_GPIOS)
 		__msm_gpio_set_intr_cfg_enable(i, 0);
@@ -445,10 +439,6 @@ void msm_gpio_show_resume_irq(void)
 			irq = msm_gpio_to_irq(&msm_gpio.gpio_chip, i);
 			pr_warning("%s: %d triggered\n",
 				__func__, irq-288);
-#if defined(CONFIG_KEYBOARD_GPIO_EXTENDED_RESUME_EVENT)
-			wakeup_gpio_num = irq-288;
-			pr_warning("%s: %d set!\n", __func__, wakeup_gpio_num);
-#endif
 		}
 	}
 	spin_unlock_irqrestore(&tlmm_lock, irq_flags);

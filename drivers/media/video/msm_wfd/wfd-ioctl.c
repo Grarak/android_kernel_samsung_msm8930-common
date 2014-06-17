@@ -161,7 +161,11 @@ static int wfd_allocate_ion_buffer(struct ion_client *client,
 	alloc_regions = ION_HEAP(ION_CP_MM_HEAP_ID);
 	alloc_regions |= secure ? 0 :
 				ION_HEAP(ION_IOMMU_HEAP_ID);
+#if !defined(CONFIG_MSM_IOMMU) && defined(CONFIG_SEC_PRODUCT_8960)
+	ion_flags |= secure ? ION_SECURE : ION_FORCE_CONTIGUOUS;
+#else
 	ion_flags |= secure ? ION_SECURE : 0;
+#endif
 	handle = ion_alloc(client,
 			mregion->size, SZ_4K, alloc_regions, ion_flags);
 
@@ -501,6 +505,12 @@ int wfd_vidbuf_buf_init(struct vb2_buffer *vb)
 		(struct wfd_device *)video_drvdata(priv_data);
 	struct mem_info *minfo = vb2_plane_cookie(vb, 0);
 	struct mem_region mregion;
+
+	if (minfo == NULL) {
+		WFD_MSG_ERR("not init buffers since allocation failed");
+		return -ENOBUFS;
+	}
+	
 	mregion.fd = minfo->fd;
 	mregion.offset = minfo->offset;
 	mregion.cookie = (u32)vb;
@@ -712,6 +722,7 @@ void wfd_vidbuf_buf_queue(struct vb2_buffer *vb)
 	struct wfd_inst *inst = (struct wfd_inst *)priv_data->private_data;
 	struct mem_region mregion;
 	struct mem_info *minfo = vb2_plane_cookie(vb, 0);
+	if (minfo != NULL) {
 	mregion.fd = minfo->fd;
 	mregion.offset = minfo->offset;
 	mregion.cookie = (u32)vb;
@@ -721,6 +732,10 @@ void wfd_vidbuf_buf_queue(struct vb2_buffer *vb)
 	if (rc) {
 		WFD_MSG_ERR("Failed to fill output buffer\n");
 	}
+    }
+    else {
+        WFD_MSG_ERR("minfo is NULL\n");
+    }
 }
 
 static struct vb2_ops wfd_vidbuf_ops = {

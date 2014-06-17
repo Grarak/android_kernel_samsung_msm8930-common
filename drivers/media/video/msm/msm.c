@@ -458,7 +458,7 @@ static int msm_camera_v4l2_streamoff(struct file *f, void *pctx,
 		pr_err("%s: hw failed to stop streaming\n", __func__);
 
 	/* stop buffer streaming */
-	rc = vb2_streamoff(&pcam_inst->vid_bufq, buf_type);
+	vb2_streamoff(&pcam_inst->vid_bufq, buf_type);
 	D("%s, videobuf_streamoff returns %d\n", __func__, rc);
 
 	mutex_unlock(&pcam_inst->inst_lock);
@@ -825,7 +825,7 @@ static long msm_camera_v4l2_private_ioctl(struct file *file, void *fh,
 			mutex_unlock(&pcam->event_lock);
 			break;
 		}
-		if (ioctl_ptr->len > 0 && ioctl_ptr->len <= MAX_SERVER_PAYLOAD_LENGTH) {
+		if (ioctl_ptr->len > 0) {
 			if (copy_to_user(ioctl_ptr->ioctl_ptr, payload,
 				 ioctl_ptr->len)) {
 				pr_err("%s Copy to user failed for cmd %d",
@@ -984,7 +984,6 @@ static int msm_open(struct file *f)
 		msm_queue_init(&pcam->eventData_q, "eventData");
 	}
 	pcam_inst->vbqueue_initialized = 0;
-	pcam_inst->sequence = 0;
 	rc = 0;
 
 	f->private_data = &pcam_inst->eventHandle;
@@ -1247,10 +1246,6 @@ long msm_v4l2_evt_notify(struct msm_cam_media_controller *mctl,
 	v4l2_ev = evt_payload.evt;
 	v4l2_ev.id = 0;
 	pcam = mctl->pcam_ptr;
-	if(!pcam) {
-		pr_err("%s: pcam is NULL\n", __func__);
-		return -EINVAL;
-	}
 	ktime_get_ts(&v4l2_ev.timestamp);
 	if (evt_payload.payload_length > 0 && evt_payload.payload != NULL) {
 		mutex_lock(&pcam->event_lock);
@@ -1427,6 +1422,7 @@ probe_fail:
 }
 #endif
 
+#if !(defined(CONFIG_MACH_GOLDEN) || defined(CONFIG_MACH_LT02_ATT) || defined(CONFIG_MACH_LT02_SPR) || defined(CONFIG_MACH_LT02_TMO) || defined(CONFIG_MACH_CANE))
 static struct v4l2_subdev *msm_eeprom_probe(
 	struct msm_eeprom_info *eeprom_info)
 {
@@ -1453,19 +1449,19 @@ static struct v4l2_subdev *msm_eeprom_probe(
 
 	adapter = i2c_get_adapter(eeprom_info->bus_id);
 	if (!adapter){
-            D("[%s::adapter] fail!!\n", __func__);        
+            D("[%s::adapter] fail!!\n", __func__);
             goto probe_fail;
        }
 
 	eeprom_client = i2c_new_device(adapter, eeprom_info->board_info);
 	if (!eeprom_client){
-            D("[%s::adapter] fail!!\n", __func__);        
+            D("[%s::adapter] fail!!\n", __func__);
             goto device_fail;
        }
 
 	eeprom_sdev = (struct v4l2_subdev *)i2c_get_clientdata(eeprom_client);
 	if (eeprom_sdev == NULL){
-            D("[%s::adapter] fail!!\n", __func__);        
+            D("[%s::adapter] fail!!\n", __func__);
             goto client_fail;
        }
 
@@ -1481,6 +1477,7 @@ probe_fail:
 	pr_err("%s probe_fail\n", __func__);
 	return NULL;
 }
+#endif
 
 /* register a msm sensor into the msm device, which will probe the
  * sensor HW. if the HW exist then create a video device (/dev/videoX/)
@@ -1510,7 +1507,9 @@ int msm_sensor_register(struct v4l2_subdev *sensor_sd)
 #ifdef CONFIG_MSM_ACTUATOR
 	pcam->act_sdev = msm_actuator_probe(sdata->actuator_info);
 #endif
+#if !(defined(CONFIG_MACH_GOLDEN) || defined(CONFIG_MACH_LT02_ATT) || defined(CONFIG_MACH_LT02_SPR) || defined(CONFIG_MACH_LT02_TMO) || defined(CONFIG_MACH_CANE))
 	pcam->eeprom_sdev = msm_eeprom_probe(sdata->eeprom_info);
+#endif
 
 	D("%s: pcam =0x%p\n", __func__, pcam);
 

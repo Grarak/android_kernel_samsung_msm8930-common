@@ -11,7 +11,6 @@
  * GNU General Public License for more details.
  *
  */
-
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <asm/unaligned.h>
@@ -22,8 +21,8 @@
 #include <linux/delay.h>
 #include <linux/input.h>
 #include <linux/firmware.h>
-#include <linux/i2c/synaptics_rmi.h>
 #include "synaptics_i2c_rmi.h"
+#include <linux/regulator/consumer.h>
 
 #define F01_DEVICE_STATUS	0X0004
 
@@ -79,6 +78,12 @@
 
 #define MIN_SLEEP_TIME_US 50
 #define MAX_SLEEP_TIME_US 100
+#define STATUS_POLLING_PERIOD_US 3000
+
+#if defined(CONFIG_MACH_JACTIVE_EUR) || defined(CONFIG_MACH_JACTIVE_ATT)
+#define FW_SUPPORT_HYNC(x)	 ((strncmp(x->product_id, "SY 03", 5))
+#define FW_NOT_SUPPORT_HYNC(x)	 ((strncmp(x->product_id, "SY 01", 5) == 0) || (strncmp(x->product_id, "S5000B", 6) == 0) || (strncmp(x->product_id, "SY 02", 5) == 0))
+#endif
 
 static ssize_t fwu_sysfs_show_image(struct file *data_file,
 		struct kobject *kobj, struct bin_attribute *attributes,
@@ -205,6 +210,7 @@ struct synaptics_rmi4_fwu_handle {
 	char product_id[SYNAPTICS_RMI4_PRODUCT_ID_SIZE + 1];
 	const unsigned char *firmware_data;
 	const unsigned char *config_data;
+	struct mutex status_mutex;
 	struct f34_flash_status flash_status;
 	struct synaptics_rmi4_fn_desc f01_fd;
 	struct synaptics_rmi4_fn_desc f34_fd;
@@ -398,6 +404,8 @@ static int fwu_read_f34_flash_status(void)
 	unsigned char status;
 	unsigned char command;
 
+	mutex_lock(&(fwu->status_mutex));
+
 	retval = fwu->fn_ptr->read(fwu->rmi4_data,
 			fwu->f34_fd.data_base_addr + FLASH_STATUS_OFFSET,
 			&status,
@@ -406,7 +414,7 @@ static int fwu_read_f34_flash_status(void)
 		dev_err(&fwu->rmi4_data->i2c_client->dev,
 				"%s: Failed to read flash status\n",
 				__func__);
-		return retval;
+		goto exit;
 	}
 
 	/* Program enabled bit not available - force bit to be set */
@@ -421,12 +429,17 @@ static int fwu_read_f34_flash_status(void)
 		dev_err(&fwu->rmi4_data->i2c_client->dev,
 				"%s: Failed to read flash command\n",
 				__func__);
-		return retval;
+		goto exit;
 	}
 
 	fwu->command = command & MASK_4BIT;
 
-	return 0;
+	retval = 0;
+
+exit:
+	mutex_unlock(&(fwu->status_mutex));
+
+	return retval;
 }
 
 static int fwu_write_f34_command(unsigned char cmd)
@@ -453,14 +466,24 @@ static int fwu_write_f34_command(unsigned char cmd)
 static int fwu_wait_for_idle(int timeout_ms)
 {
 	int count = 0;
+	int polling_period = STATUS_POLLING_PERIOD_US / MAX_SLEEP_TIME_US;
 	int timeout_count = ((timeout_ms * 1000) / MAX_SLEEP_TIME_US) + 1;
 
 	do {
 		usleep_range(MIN_SLEEP_TIME_US, MAX_SLEEP_TIME_US);
 
 		count++;
-		if (count == timeout_count)
+		if ((timeout_ms == WRITE_WAIT_MS) &&
+				(count >= polling_period) &&
+				((count % polling_period) == 0)) {
 			fwu_read_f34_flash_status();
+		} else if (count == timeout_count) {
+			dev_err(&fwu->rmi4_data->i2c_client->dev,
+					"%s: wait usleep, in writing block [%d]\n",
+					__func__, count);
+
+			fwu_read_f34_flash_status();
+		}
 
 		if ((fwu->command == 0x00) &&
 				(fwu->flash_status.status == 0x00))
@@ -495,7 +518,7 @@ static int fwu_scan_pdt(void)
 			return retval;
 
 		if (rmi_fd.fn_number) {
-			dev_info(&fwu->rmi4_data->i2c_client->dev,
+			dev_dbg(&fwu->rmi4_data->i2c_client->dev,
 					"%s: Found F%02x\n",
 					__func__, rmi_fd.fn_number);
 			switch (rmi_fd.fn_number) {
@@ -707,6 +730,13 @@ static int fwu_do_reflash(void)
 {
 	int retval;
 
+	retval = set_freq_limit(DVFS_TOUCH_ID,
+				MIN_TOUCH_LIMIT);
+	if (retval < 0)
+		dev_err(&fwu->rmi4_data->i2c_client->dev,
+			"%s: dvfs failed at fw update.\n",
+			__func__);
+
 	retval = fwu_enter_flash_prog();
 	if (retval < 0)
 		return retval;
@@ -758,54 +788,144 @@ static int fwu_do_reflash(void)
 	return retval;
 }
 
-static bool fwu_check_skip_reflash(bool mode,bool factory_fw,
+/* TODO: Below function is added to check that firmware update is needed or not.
+ * During development period, we need to support test firmware and various H/W
+ * type such as A1/B0.... So Below conditions are very compex, maybe we need to
+ * simplify this function not so far.
+ * Synaptics's test firmware binary doesn't have Ic and firmware version.
+ * in that case we skip update on booting time.
+ * otherwise we forced run the update during UMS update..
+ */
+static bool fwu_check_skip_reflash(bool mode, bool factory_fw,
 	const struct firmware *fw_entry)
 {
-
 	if (fwu->ext_data_source) {
 		/* UMS case */
 		int ic_revision_of_bin =
 			(int)fwu->ext_data_source[IC_REVISION_BIN_OFFSET];
 		int fw_version_of_bin =
 			(int)fwu->ext_data_source[FW_VERSION_BIN_OFFSET];
+		int fw_release_date_of_bin =
+			(int)(fwu->ext_data_source[DATE_OF_FIRMWARE_BIN_OFFSET] << 8
+				| fwu->ext_data_source[DATE_OF_FIRMWARE_BIN_OFFSET + 1]);
 
-		dev_info(&fwu->rmi4_data->i2c_client->dev,
-				"%s:ext_data_config ID_1 of Bin:0x%02X, config ID_2 of Bin:0x%02X", __func__,
-				ic_revision_of_bin, fw_version_of_bin);
+		/* A1 revision does not have revision info in firmware */
+		if ((ic_revision_of_bin >> 4) != 0xB) {
+#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
+			/* Test firmware file does not have version infomation */
+			if (!ic_revision_of_bin && !fw_version_of_bin
+				&& !fw_release_date_of_bin) {
+				dev_info(&fwu->rmi4_data->i2c_client->dev,
+					"%s [UMS] : Firmware is Test firmware\n",
+					__func__);
+				ic_revision_of_bin = 0xB0;
+			} else {
+				ic_revision_of_bin = 0xA1;
+			}
+#else
+			ic_revision_of_bin = 0xA1;
+#endif
+		}
+
+		if (ic_revision_of_bin == 0xBF)
+			dev_info(&fwu->rmi4_data->i2c_client->dev,
+				"%s [UMS] : Firmware is Factory Test firmware\n",
+				__func__);
+
+		/* To prevent writing B0 firmware into A1 board */
+		if ((fwu->rmi4_data->ic_revision_of_ic >> 4) != (ic_revision_of_bin >> 4)) {
+
+			if ((!fwu->rmi4_data->fw_release_date_of_ic) && (!fwu->rmi4_data->fw_version_of_ic)) {
+					dev_err(&fwu->rmi4_data->i2c_client->dev,
+						"%s:[UMS] update: Revision is not macthed 0x%X(BIN) != 0x%X(IC), but IC FW is TEST FW, run force update\n",
+						__func__, ic_revision_of_bin,
+						fwu->rmi4_data->ic_revision_of_ic);
+				return false;
+			} else {
+				dev_err(&fwu->rmi4_data->i2c_client->dev,
+						"%s:[UMS] update: Revision is not macthed 0x%X(BIN) != 0x%X(IC)\n",
+						__func__, ic_revision_of_bin,
+						fwu->rmi4_data->ic_revision_of_ic);
+				return true;
+			}
+		}
 	} else {
 		/* In kernel case */
 		/* Read revision and firmware info from binary */
 		fwu->rmi4_data->ic_revision_of_bin =
 			(int)fw_entry->data[IC_REVISION_BIN_OFFSET];
+		/* A1 revision does not have revision info in firmware */
+		if ((fwu->rmi4_data->ic_revision_of_bin  >> 4) != 0xB)
+			fwu->rmi4_data->ic_revision_of_bin = 0xA1;
 
-		if (!factory_fw)
-			fwu->rmi4_data->fw_version_of_bin =
-				(int)fw_entry->data[FW_VERSION_BIN_OFFSET];
+		fwu->rmi4_data->fw_version_of_bin =
+			(int)fw_entry->data[FW_VERSION_BIN_OFFSET];
 
 		dev_info(&fwu->rmi4_data->i2c_client->dev,
-			"%s: [FW size. revision, version] [%d, 0x%02X/0x%02X(BIN/IC), 0x%02X/0x%02X%02X(BIN/IC)]\n",
+			"%s: [FW size. revision, version] [%d, 0x%02X/0x%02X(BIN/IC), 0x%02X/0x%02X(BIN/IC)]\n",
 			__func__, fw_entry->size,
 			fwu->rmi4_data->ic_revision_of_bin,
 			fwu->rmi4_data->ic_revision_of_ic,
 			(int)fw_entry->data[FW_VERSION_BIN_OFFSET],
-			fwu->rmi4_data->fw_order_of_ic,
 			fwu->rmi4_data->fw_version_of_ic);
 		dev_info(&fwu->rmi4_data->i2c_client->dev,
 			"%s: [Panel, mode, prog] [0x%02X, 0x%02X, 0x%02X]\n",
 			__func__, fwu->rmi4_data->panel_revision,
 			mode, fwu->rmi4_data->flash_prog_mode);
 
-		dev_info(&fwu->rmi4_data->i2c_client->dev,
-				"%s:FW_version Bin:0x%02X, FW_version IC:0x%02X", __func__,
-				fwu->rmi4_data->fw_version_of_bin, fwu->rmi4_data->fw_version_of_ic);
-		if (fwu->rmi4_data->force_update == true)
-			return false;		
-		
+#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
+		/* Test firmware file does not have version infomation */
+		if ((!mode) && (!fwu->rmi4_data->flash_prog_mode)
+			&& !fwu->rmi4_data->fw_version_of_ic
+			&& !fwu->rmi4_data->fw_release_date_of_ic){
+			dev_info(&fwu->rmi4_data->i2c_client->dev,
+					"%s:[TEST] Firmware is Test firmware so do not need to update fw\n",
+					__func__);
+			return true;
+		}
+#endif
+/*
+		if (((fwu->rmi4_data->ic_revision_of_ic >> 4) != (fwu->rmi4_data->ic_revision_of_bin >> 4))) {
+			dev_info(&fwu->rmi4_data->i2c_client->dev,
+				"%s: IC revision is not equal. IC: 0x%x / BIN 0x%x\n",
+				__func__,
+				fwu->rmi4_data->ic_revision_of_ic,
+				fwu->rmi4_data->ic_revision_of_bin);
+			return true;
+		}
+*/
+		if ((!mode) && (factory_fw) && (fwu->rmi4_data->ic_revision_of_ic == 0xB0) &&
+			(fwu->rmi4_data->fw_version_of_bin <= fwu->rmi4_data->fw_version_of_ic)) {
+			if (fwu->rmi4_data->board->recovery_mode) {
+				dev_info(&fwu->rmi4_data->i2c_client->dev,
+					"%s: recovery mode && factory bianry, run fw update to Factory FW\n",
+					__func__);
+			} else {
+				dev_info(&fwu->rmi4_data->i2c_client->dev,
+					"%s:[%s] %s BIN: 0x%02X /  %s FW: 0x%02X, do not update factory fw\n",
+					__func__, mode ? "Force" : "Booting",
+					factory_fw ? "FACTORY" : "USER", fwu->rmi4_data->fw_version_of_bin,
+					fwu->rmi4_data->ic_revision_of_ic == 0xB0 ? "USER FW" : "FACTORY FW",
+					fwu->rmi4_data->fw_version_of_ic);
+				return true;
+			}
+		}
+
 		if ((fwu->rmi4_data->fw_version_of_bin <= fwu->rmi4_data->fw_version_of_ic) &&
+			(fwu->rmi4_data->ic_revision_of_ic == fwu->rmi4_data->ic_revision_of_bin) &&
 			(!mode) && (!fwu->rmi4_data->flash_prog_mode)) {
 			dev_info(&fwu->rmi4_data->i2c_client->dev,
 				"%s: do not need to update fw\n", __func__);
 			return true;
+		} else {
+			dev_info(&fwu->rmi4_data->i2c_client->dev,
+				"%s: fw_ver (BIN:0x%x/IC:0x%x) ic_ver(BIN:0x%x/IC:0x%x) mode(%s) frog(%x)\n",
+				__func__, fwu->rmi4_data->fw_version_of_bin,
+				fwu->rmi4_data->fw_version_of_ic,
+				fwu->rmi4_data->ic_revision_of_ic,
+				fwu->rmi4_data->ic_revision_of_bin,
+				mode ? "forced" : "booting",
+				fwu->rmi4_data->flash_prog_mode);
 		}
 	}
 
@@ -819,8 +939,6 @@ static int fwu_start_reflash(bool mode, bool factory_fw)
 	struct image_header header;
 	const unsigned char *fw_image;
 	const struct firmware *fw_entry = NULL;
-	int check_order = 0;
-	int release_order = 0;
 
 	if (fwu->rmi4_data->sensor_sleep || fwu->rmi4_data->touch_stopped) {
 		dev_err(&fwu->rmi4_data->i2c_client->dev,
@@ -830,40 +948,6 @@ static int fwu_start_reflash(bool mode, bool factory_fw)
 	}
 
 	fwu->rmi4_data->stay_awake = true;
-	fwu->rmi4_data->force_update = false;
-	check_order = fwu->rmi4_data->fw_order_of_ic;
-	release_order = fwu->rmi4_data->fw_order_of_ic;
-
-#if	defined(CONFIG_MACH_MELIUS_VZW) \
-	|| defined(CONFIG_MACH_MELIUS_SPR) \
-	|| defined(CONFIG_MACH_MELIUS_USC)
-	if (system_rev < 1) {
-#else
-	if (system_rev < 5) {
-#endif
-		dev_info(&fwu->rmi4_data->i2c_client->dev,
-			"%s: EELY: do not need to update fw (System_rev:%d)\n", __func__, system_rev);
-		goto  done;
-	}
-	dev_info(&fwu->rmi4_data->i2c_client->dev,
-			"%s: manufacture_ID=%d\n", __func__, fwu->rmi4_data->manufactures_num_of_ic);
-#if defined(CONFIG_MACH_MELIUS_EUR_LTE) \
-	|| defined(CONFIG_MACH_MELIUS_EUR_OPEN) \
-	|| defined(CONFIG_MACH_MELIUS_SKT) \
-	|| defined(CONFIG_MACH_MELIUS_KTT) \
-	|| defined(CONFIG_MACH_MELIUS_LGT) \
-	|| defined(CONFIG_MACH_MELIUS_ATT) \
-	|| defined(CONFIG_MACH_MELIUS_VZW) \
-	|| defined(CONFIG_MACH_MELIUS_TMO) \
-	|| defined(CONFIG_MACH_MELIUS_SPR) \
-	|| defined(CONFIG_MACH_MELIUS_USC)
-
-	if (fwu->rmi4_data->manufactures_num_of_ic == 0) {
-		dev_info(&fwu->rmi4_data->i2c_client->dev,
-			"%s: do not need to update fw anymore (old ic ver)\n", __func__);
-		goto  done;
-	}
-#endif
 
 	if (fwu->ext_data_source) {
 		if (fwu_check_skip_reflash(mode, factory_fw, NULL)) {
@@ -877,87 +961,97 @@ static int fwu_start_reflash(bool mode, bool factory_fw)
 		memset(&fw_path, 0, SYNAPTICS_MAX_FW_PATH);
 
 		/* use factory test FW */
+#if defined(CONFIG_MACH_JACTIVE_EUR) || defined(CONFIG_MACH_JACTIVE_ATT)
 		if (factory_fw) {
 			dev_info(&fwu->rmi4_data->i2c_client->dev,
 				"%s: run fw update for FACTORY FIRMWARE\n",
 				__func__);
-			snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
-				"%s", FW_IMAGE_NAME_B0_FAC);
+			if (FW_NOT_SUPPORT_HYNC(fwu))
+				snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
+					"%s", FW_IMAGE_NAME_B0_NON_HSYNC_FAC);
+			else
+				snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
+					"%s", FW_IMAGE_NAME_B0_HSYNC_FAC);
 		} else {
 		/* Read firmware according to ic revision */
-			if (fwu->rmi4_data->ic_revision_of_ic == 0xB0) {
-					/* Read firmware according to manufactures ID */
-					switch (fwu->rmi4_data->manufactures_num_of_ic) {
-
-#if defined(CONFIG_MACH_MELIUS_EUR_LTE) \
-	|| defined(CONFIG_MACH_MELIUS_EUR_OPEN) \
-	|| defined(CONFIG_MACH_MELIUS_SKT) \
-	|| defined(CONFIG_MACH_MELIUS_KTT) \
-	|| defined(CONFIG_MACH_MELIUS_LGT) \
-	|| defined(CONFIG_MACH_MELIUS_ATT) \
-	|| defined(CONFIG_MACH_MELIUS_VZW) \
-	|| defined(CONFIG_MACH_MELIUS_TMO) \
-	|| defined(CONFIG_MACH_MELIUS_SPR) \
-	|| defined(CONFIG_MACH_MELIUS_USC)
-
-					case MANUFACTURERS_NEP:
-						if (release_order == 0x13) {
-							snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
-								"%s", FW_IMAGE_NAME_B0_NEP_13);
-							break;
-						} else if (release_order == 0x14) {
-							snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
-								"%s", FW_IMAGE_NAME_B0_NEP_14);
-							break;
-						} else if (release_order == 0x19) {
-							snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
-								"%s", FW_IMAGE_NAME_B0_NEP_19);
-							break;
-						} else if (release_order == 0x1F) {
-							fwu->rmi4_data->force_update = true;
-							snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
-								"%s", FW_IMAGE_NAME_B0_NEP_14);
-							break;
-						}else {
-							fwu->rmi4_data->force_update = true;
-							snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
-								"%s", FW_IMAGE_NAME_B0_NEP_14);
-							break;
-						}
-					case MANUFACTURERS_YFO:
+			if ((fwu->rmi4_data->ic_revision_of_ic >> 4) == 0xB) {
+				/* Read firmware according to panel ID */
+				switch (fwu->rmi4_data->panel_revision) {
+				case OCTA_PANEL_REVISION_34:
+					if (FW_NOT_SUPPORT_HYNC(fwu))
 						snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
-							"%s", FW_IMAGE_NAME_B0_YFO);
-						break;
-					case MANUFACTURERS_NEPES_2:
+							"%s", FW_IMAGE_NAME_B0_NON_HSYNC);
+					else
 						snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
-							"%s", FW_IMAGE_NAME_B0_NEP_2);
-						break;
-
+							"%s", FW_IMAGE_NAME_B0_HSYNC);
+					break;
+				default:
+					dev_info(&fwu->rmi4_data->i2c_client->dev,
+						"%s: Do not request, not matched revision and FW.\n",
+						__func__);
+					goto out;
+				}
+			} else if ((fwu->rmi4_data->ic_revision_of_ic >> 4) == 0xA) {
+				dev_info(&fwu->rmi4_data->i2c_client->dev,
+					"%s: Do not request, not matched revision and FW.\n",
+					__func__);
+				goto out;
+			} else { // force update when ic_revision_of_ic is NULL
+				snprintf(fw_path, SYNAPTICS_MAX_FW_PATH, "%s", FW_IMAGE_NAME_B0_HSYNC);
+				printk(KERN_ERR "%s, force update when ic_revision_of_ic is NULL\n", __func__);
+				mode = true;
+			}
+		}
 #else
-					case manufacturers_default:
+		if (factory_fw) {
+			dev_info(&fwu->rmi4_data->i2c_client->dev,
+				"%s: run fw update for FACTORY FIRMWARE\n",
+				__func__);
+			if (fwu->rmi4_data->panel_revision < OCTA_PANEL_REVISION_51)
+				snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
+						"%s", FW_IMAGE_NAME_B0_FAC);
+			else
+				snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
+						"%s", FW_IMAGE_NAME_B0_5_1_FAC);
+
+		} else {
+		/* Read firmware according to ic revision */
+			if ((fwu->rmi4_data->ic_revision_of_ic >> 4) == 0xB) {
+					/* Read firmware according to panel ID */
+					switch (fwu->rmi4_data->panel_revision) {
+					case OCTA_PANEL_REVISION_43:
 						snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
-							"%s", FW_IMAGE_NAME_B0);
+							"%s", FW_IMAGE_NAME_B0_43);
 						break;
-					case manufacturers_nepes:
+					case OCTA_PANEL_REVISION_40:
 						snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
-							"%s", FW_IMAGE_NAME_B0_Nepes);
+							"%s", FW_IMAGE_NAME_B0_40);
 						break;
-					case manufacturers_youngfest:
+					case OCTA_PANEL_REVISION_34:
 						snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
-							"%s", FW_IMAGE_NAME_B0_young);
+							"%s", FW_IMAGE_NAME_B0_34);
 						break;
-#endif
+					case OCTA_PANEL_REVISION_51:
+						snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
+							"%s", FW_IMAGE_NAME_B0_51);
+						break;
 					default:
 						dev_info(&fwu->rmi4_data->i2c_client->dev,
 							"%s: Do not request, not matched revision and FW.\n",
 							__func__);
 						goto out;
 				}
-					} else {
+			} else if ((fwu->rmi4_data->ic_revision_of_ic >> 4) == 0xA) {
 				snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
 					"%s", FW_IMAGE_NAME_A1);
+			} else if (fwu->rmi4_data->ic_revision_of_ic == 0x00) {
+				if ((strncmp(fwu->product_id, SYNAPTICS_PRODUCT_ID_B0, 5) == 0)
+					 ||	(strncmp(fwu->product_id, SYNAPTICS_PRODUCT_ID_B0_SPAIR, 6) == 0))
+					snprintf(fw_path, SYNAPTICS_MAX_FW_PATH,
+						"%s", FW_IMAGE_NAME_B0_43);
 			}
 		}
+#endif
 		dev_info(&fwu->rmi4_data->i2c_client->dev,
 				"%s: Requesting firmware image %s\n",
 				__func__, fw_path);
@@ -973,7 +1067,6 @@ static int fwu_start_reflash(bool mode, bool factory_fw)
 
 		if (fwu_check_skip_reflash(mode, factory_fw, fw_entry))
 			goto done;
-
 		fw_image = fw_entry->data;
 	}
 
@@ -990,33 +1083,39 @@ static int fwu_start_reflash(bool mode, bool factory_fw)
 
 		mutex_lock(&(fwu->rmi4_data->rmi4_reflash_mutex));
 		fwu->rmi4_data->doing_reflash = true;
-	retval = fwu_do_reflash();
-	if (retval < 0) {
-		dev_err(&fwu->rmi4_data->i2c_client->dev,
-				"%s: Failed to do reflash\n",
-				__func__);
-	}
+		retval = fwu_do_reflash();
+		if (retval < 0) {
+			dev_err(&fwu->rmi4_data->i2c_client->dev,
+					"%s: Failed to do reflash\n",
+					__func__);
+		}
 
-	fwu->rmi4_data->reset_device(fwu->rmi4_data);
-	fwu->rmi4_data->doing_reflash = false;
-	mutex_unlock(&(fwu->rmi4_data->rmi4_reflash_mutex));
+		fwu->rmi4_data->reset_device(fwu->rmi4_data);
+		fwu->rmi4_data->doing_reflash = false;
+		mutex_unlock(&(fwu->rmi4_data->rmi4_reflash_mutex));
 
-	fwu->fn_ptr->read(fwu->rmi4_data,
-			F01_DEVICE_STATUS,
-			&device_status,
-			sizeof(device_status));
-	if (!(device_status & (1 << 6)))
-		break;
-	else
-		dev_info(&fwu->rmi4_data->i2c_client->dev,
-			"%s: flash prog bit = %x, retry = %d\n",
-			__func__, device_status & (1 << 6), retry);
+		fwu->fn_ptr->read(fwu->rmi4_data,
+				F01_DEVICE_STATUS,
+				&device_status,
+				sizeof(device_status));
+		if (!(device_status & (1 << 6)))
+			break;
+		else
+			dev_info(&fwu->rmi4_data->i2c_client->dev,
+				"%s: flash prog bit = %x, retry = %d\n",
+				__func__, device_status & (1 << 6), retry);
 
 	}
 done:
 	if (fw_entry)
 		release_firmware(fw_entry);
 out:
+	retval = set_freq_limit(DVFS_TOUCH_ID, -1);
+	if (retval < 0)
+		dev_err(&fwu->rmi4_data->i2c_client->dev,
+			"%s: in fw update, failed booster stop.\n",
+			__func__);
+
 	dev_info(&fwu->rmi4_data->i2c_client->dev, "%s: End of reflash process\n",
 		 __func__);
 
@@ -1251,7 +1350,11 @@ exit:
 	return retval;
 }
 
-/* mode : TRUE : force update, FALSE : auto update */
+/*
+ * fw_data : if exist external FW data.
+ * mode : TRUE : force update, FALSE : auto update
+ * factory_mode : TRUE : FACTORY FW update, FALSE : normal FW update
+ */
 int synaptics_fw_updater(unsigned char *fw_data, bool mode, bool factory_fw)
 {
 	int retval;
@@ -1265,6 +1368,9 @@ int synaptics_fw_updater(unsigned char *fw_data, bool mode, bool factory_fw)
 	fwu->ext_data_source = fw_data;
 	fwu->config_area = UI_CONFIG_AREA;
 
+	dev_info(&fwu->rmi4_data->i2c_client->dev,
+			"%s: %s, %s_FW\n", __func__, mode ? "forced" : "booting",
+			factory_fw ? "factory" : "user");
 	retval = fwu_start_reflash(mode, factory_fw);
 
 	return retval;
@@ -1482,6 +1588,7 @@ static int synaptics_rmi4_fwu_init(struct synaptics_rmi4_data *rmi4_data)
 {
 	int retval;
 	unsigned char attr_count;
+	int attr_count_num;
 	struct pdt_properties pdt_props;
 
 	fwu = kzalloc(sizeof(*fwu), GFP_KERNEL);
@@ -1531,67 +1638,35 @@ static int synaptics_rmi4_fwu_init(struct synaptics_rmi4_data *rmi4_data)
 			SYNAPTICS_RMI4_PRODUCT_ID_SIZE);
 	fwu->product_id[SYNAPTICS_RMI4_PRODUCT_ID_SIZE] = 0;
 
+#if defined(CONFIG_MACH_JACTIVE_EUR) || defined(CONFIG_MACH_JACTIVE_ATT)
+	/* Fortius Use only B Type. So read and use ic_revision_of_ic from IC */
+#else
 	/* Check the IC revision from product ID value
 	 * we can check the ic revision with f34_ctrl_3 but to read production
 	 * ID is more safity. because it is non-user writerble area.
 	 */
-	if ((strncmp(fwu->product_id,
-			 SYNAPTICS_PRODUCT_ID_B0, 5) == 0)
-		 ||	(strncmp(fwu->product_id,
-			 SYNAPTICS_PRODUCT_ID_B0_SPAIR, 6) == 0)) {
-		rmi4_data->ic_revision_of_ic = 0xB0;
-	} else
-		rmi4_data->ic_revision_of_ic = 0xA1;
-#if defined(CONFIG_MACH_MELIUS_EUR_LTE) \
-	|| defined(CONFIG_MACH_MELIUS_EUR_OPEN) \
-	|| defined(CONFIG_MACH_MELIUS_SKT) \
-	|| defined(CONFIG_MACH_MELIUS_KTT) \
-	|| defined(CONFIG_MACH_MELIUS_LGT) \
-	|| defined(CONFIG_MACH_MELIUS_ATT) \
-	|| defined(CONFIG_MACH_MELIUS_VZW) \
-	|| defined(CONFIG_MACH_MELIUS_TMO) \
-	|| defined(CONFIG_MACH_MELIUS_SPR) \
-	|| defined(CONFIG_MACH_MELIUS_USC)
 
-	if (strncmp(fwu->product_id,
-			 SYNAPTICS_PRODUCT_ID_MANUFACTURE_NEP, 9) == 0) {
-		rmi4_data->manufactures_num_of_ic = 0x01;
-		rmi4_data->window_type = BLACK;
-	} else if (strncmp(fwu->product_id,
-			 SYNAPTICS_PRODUCT_ID_MANUFACTURE_NEW, 9) == 0) {
-		rmi4_data->manufactures_num_of_ic = 0x01;
-		rmi4_data->window_type = WHITE;
-	} else if (strncmp(fwu->product_id,
-			 SYNAPTICS_PRODUCT_ID_MANUFACTURE_YFO, 9) == 0) {
-		rmi4_data->manufactures_num_of_ic = 0x02;
-	} else if (strncmp(fwu->product_id,
-			 SYNAPTICS_PRODUCT_ID_MANUFACTURE_SY4, 9) == 0) {
-		rmi4_data->manufactures_num_of_ic = 0x03;
-	} else
-		rmi4_data->manufactures_num_of_ic = 0x00;	
-#else
-	if (strncmp(fwu->product_id,
-			 SYNAPTICS_PRODUCT_ID_MANUFACTURE_2, 9) == 0) {
-		rmi4_data->manufactures_num_of_ic = 0x02;
-	} else if (strncmp(fwu->product_id,
-			 SYNAPTICS_PRODUCT_ID_MANUFACTURE_3, 9) == 0) {
-		rmi4_data->manufactures_num_of_ic = 0x03;
-	} else
-		rmi4_data->manufactures_num_of_ic = 0x01;
+	if ((strncmp(fwu->product_id, SYNAPTICS_PRODUCT_ID_B0, 5) == 0)
+		 || (strncmp(fwu->product_id, SYNAPTICS_PRODUCT_ID_B0_SPAIR, 6) == 0))
+			 dev_info(&rmi4_data->i2c_client->dev,
+					"%s: ic revision is B0 type.\n",
+					__func__);
+	else
+		rmi4_data->ic_revision_of_ic = 0xA1;
 #endif
-	
+
 	dev_info(&rmi4_data->i2c_client->dev,
-			"%s: [IC] [F01 product info, ID(revision)] [0x%04X 0x%04X, %s(0X%X)], PANEL : 0x%02X, manufacture:0x%02X\n",
+			"%s: [IC] [F01 product info, ID(revision)] [0x%04X 0x%04X, %s(0X%X)], PANEL : 0x%02X\n",
 			__func__, fwu->productinfo1,
 			fwu->productinfo2, fwu->product_id,
 			rmi4_data->ic_revision_of_ic,
-			rmi4_data->panel_revision,
-			rmi4_data->manufactures_num_of_ic);
+			rmi4_data->panel_revision);
 
 	retval = fwu_read_f34_queries();
 	if (retval < 0)
 		goto exit_free_mem;
 
+	mutex_init(&(fwu->status_mutex));
 	fwu->initialized = true;
 
 	retval = sysfs_create_bin_file(&rmi4_data->input_dev->dev.kobj,
@@ -1618,8 +1693,9 @@ static int synaptics_rmi4_fwu_init(struct synaptics_rmi4_data *rmi4_data)
 	return 0;
 
 exit_remove_attrs:
-for (attr_count--; attr_count >= 0; attr_count--) {
-	sysfs_remove_file(&rmi4_data->input_dev->dev.kobj,
+	attr_count_num = (int)attr_count;
+	for (attr_count_num--; attr_count_num >= 0; attr_count_num--) {
+		sysfs_remove_file(&rmi4_data->input_dev->dev.kobj,
 			&attrs[attr_count].attr);
 }
 

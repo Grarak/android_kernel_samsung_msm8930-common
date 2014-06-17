@@ -28,7 +28,6 @@
 #include <linux/fmem.h>
 #include <linux/iommu.h>
 #include <linux/dma-mapping.h>
-#include <trace/events/kmem.h>
 
 #include <asm/mach/map.h>
 
@@ -112,12 +111,7 @@ enum {
 	HEAP_PROTECTED = 1,
 };
 
-#if defined(CONFIG_MACH_MELIUS_EUR_OPEN) || defined(CONFIG_MACH_MELIUS_EUR_LTE)
-/* Temporaryfix for cma alloc fail issue in WDF service */
-#define DMA_ALLOC_RETRIES	100
-#else
 #define DMA_ALLOC_RETRIES	5
-#endif
 
 static int ion_cp_protect_mem(unsigned int phy_base, unsigned int size,
 			unsigned int permission_type, int version,
@@ -147,10 +141,8 @@ static int allocate_heap_memory(struct ion_heap *heap)
 						&(cp_heap->handle),
 						0,
 						&attrs);
-		if (!cp_heap->cpu_addr) {
-			trace_ion_cp_alloc_retry(tries);
+		if (!cp_heap->cpu_addr)
 			msleep(20);
-		}
 	}
 
 	if (!cp_heap->cpu_addr)
@@ -337,7 +329,7 @@ ion_phys_addr_t ion_cp_allocate(struct ion_heap *heap,
 	if (!force_contig && !secure_allocation &&
 	     cp_heap->disallow_non_secure_allocation) {
 		mutex_unlock(&cp_heap->lock);
-		pr_debug("%s: non-secure allocation disallowed from this heap\n",
+		pr_info("%s: non-secure allocation disallowed from this heap\n",
 			__func__);
 		return ION_CP_ALLOCATE_FAIL;
 	}
@@ -373,7 +365,7 @@ ion_phys_addr_t ion_cp_allocate(struct ion_heap *heap,
 		cp_heap->allocated_bytes -= size;
 		if ((cp_heap->total_size -
 		     cp_heap->allocated_bytes) >= size)
-			pr_debug("%s: heap %s has enough memory (%lx) but"
+			pr_info("%s: heap %s has enough memory (%lx) but"
 				" the allocation of size %lx still failed."
 				" Memory is probably fragmented.\n",
 				__func__, heap->name,
@@ -933,7 +925,6 @@ static int iommu_map_all(unsigned long domain_num, struct ion_cp_heap *cp_heap,
 		}
 		if (domain_num == cp_heap->iommu_2x_map_domain)
 			ret_value = msm_iommu_map_extra(domain, temp_iova,
-							cp_heap->base,
 							cp_heap->total_size,
 							SZ_64K, prot);
 		if (ret_value)
@@ -1026,9 +1017,8 @@ static int ion_cp_heap_map_iommu(struct ion_buffer *buffer,
 
 	if (extra) {
 		unsigned long extra_iova_addr = data->iova_addr + buffer->size;
-		unsigned long phys_addr = sg_phys(buffer->sg_table->sgl);
-		ret = msm_iommu_map_extra(domain, extra_iova_addr, phys_addr,
-					extra, SZ_4K, prot);
+		ret = msm_iommu_map_extra(domain, extra_iova_addr, extra,
+					  SZ_4K, prot);
 		if (ret)
 			goto out2;
 	}

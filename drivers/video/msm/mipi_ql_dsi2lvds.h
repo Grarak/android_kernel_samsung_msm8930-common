@@ -27,16 +27,31 @@
 #define V5D3BX_MAX_STRENGHT		15
 
 #define V5D3BX_CABCBRIGHTNESSRATIO	815
-#define V5D3BX_10KHZ_DEFAULT_RATIO	4707
+#define V5D3BX_10KHZ_DEFAULT_RATIO	5078
 #define AUTOBRIGHTNESS_LIMIT_VALUE	207
 
 #define MIN_BRIGHTNESS			0
 #define MAX_BRIGHTNESS_LEVEL		255
-#define MID_BRIGHTNESS_LEVEL		160
-#define LOW_BRIGHTNESS_LEVEL		20
+#define MID_BRIGHTNESS_LEVEL		195
+#define LOW_BRIGHTNESS_LEVEL		29
 #define DIM_BRIGHTNESS_LEVEL		19
 #define DEFAULT_BRIGHTNESS		MID_BRIGHTNESS_LEVEL
 
+#define V5D3BX_MIN_BRIGHTNESS			0
+#define V5D3BX_MAX_BRIGHTNESS_LEVEL_SDC		330
+#define V5D3BX_MID_BRIGHTNESS_LEVEL_SDC		185
+
+#define V5D3BX_MAX_BRIGHTNESS_LEVEL_BOE		422
+#define V5D3BX_MID_BRIGHTNESS_LEVEL_BOE		233
+
+#define V5D3BX_LOW_BRIGHTNESS_LEVEL		11
+#define V5D3BX_DIM_BRIGHTNESS_LEVEL		5
+
+struct display_status {
+	unsigned char auto_brightness;
+	unsigned char cabc;
+	
+};
 
 struct mipi_dsi2lvds_driver_data {
 	struct dsi_buf dsi2lvds_tx_buf;
@@ -51,7 +66,7 @@ struct mipi_dsi2lvds_driver_data {
 #if defined(CONFIG_HAS_EARLYSUSPEND)
 	struct early_suspend early_suspend;
 #endif
-
+	struct display_status dstat;
 };
 
 
@@ -61,11 +76,16 @@ struct mipi_panel_data {
 	struct mipi_dsi2lvds_driver_data *msd;
 };
 
-
 enum {
 	MIPI_RESUME_STATE,
 	MIPI_SUSPEND_STATE,
 };
+
+enum {
+	SDC_PANEL,
+	BOE_PANEL,
+};
+
 int mipi2lvds_vx5b3d_disp_device_register(struct msm_panel_info *pinfo,
 					u32 channel, u32 panel,
 					struct mipi_panel_data *mpd);

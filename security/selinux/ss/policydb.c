@@ -471,11 +471,9 @@ static void hash_eval(struct hashtab *h, const char *hash_name)
 	struct hashtab_info info;
 
 	hashtab_stat(h, &info);
-#if 0
 	printk(KERN_DEBUG "SELinux: %s:  %d entries and %d/%d buckets used, "
 	       "longest chain length %d\n", hash_name, h->nel,
 	       info.slots_used, h->size, info.max_chain_len);
-#endif
 }
 
 static void symtab_hash_eval(struct symtab *s)
@@ -502,19 +500,15 @@ static int policydb_index(struct policydb *p)
 {
 	int i, rc;
 
-#if 0
 	printk(KERN_DEBUG "SELinux:  %d users, %d roles, %d types, %d bools",
 	       p->p_users.nprim, p->p_roles.nprim, p->p_types.nprim, p->p_bools.nprim);
-#endif
 	if (p->mls_enabled)
 		printk(", %d sens, %d cats", p->p_levels.nprim,
 		       p->p_cats.nprim);
 	printk("\n");
 
-#if 0
 	printk(KERN_DEBUG "SELinux:  %d classes, %d rules\n",
 	       p->p_classes.nprim, p->te_avtab.nel);
-#endif
 
 #ifdef DEBUG_HASHES
 	avtab_hash_eval(&p->te_avtab, "rules");

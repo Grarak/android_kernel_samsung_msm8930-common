@@ -22,12 +22,13 @@ static char WRCMD2[] = {
 	0xFF,
 	0x05,
 	0x00, 0x00,
-}; 
+};
+
 static char WRMTP[] = {
 	0xFB,
 	0x01,
 	0x00, 0x00,
-}; 
+};
 
 static char ESD_X3_0[] = {
 	0x92,
@@ -57,8 +58,14 @@ static char ESD_X3_4[] = {
 	0xD0,
 	0x7F,
 	0x00, 0x00,
-}; 
+};
 
+static char ESD_X3_5[] = {
+	0xD0,
+ 	0x2F,
+ 	0x00, 0x00,
+};
+ 
 static char WRCMD1[] = {
 	0xFF,
 	0x00,
@@ -224,6 +231,48 @@ static struct dsi_cmd_desc novatek_video_on_cmds[] = {
 		sizeof(DISPON), DISPON},
 };
 
+static struct dsi_cmd_desc novatek_sharp_video_on_cmds[] = {
+
+	{DTYPE_GEN_LWRITE, 1, 0, 0, 10,
+	  sizeof(WRCMD2), WRCMD2},
+
+	{DTYPE_GEN_LWRITE, 1, 0, 0, 0,
+	  sizeof(WRMTP), WRMTP},
+
+	{DTYPE_GEN_LWRITE, 1, 0, 0, 0,
+	  sizeof(ESD_X3_1), ESD_X3_1},
+
+	{DTYPE_GEN_LWRITE, 1, 0, 0, 0,
+	  sizeof(ESD_X3_2), ESD_X3_2},
+
+	{DTYPE_GEN_LWRITE, 1, 0, 0, 0,
+	  sizeof(ESD_X3_3), ESD_X3_3},
+
+	{DTYPE_GEN_LWRITE, 1, 0, 0, 0,
+	  sizeof(ESD_X3_4), ESD_X3_5},
+
+	{DTYPE_GEN_LWRITE, 1, 0, 0, 0,
+	  sizeof(PAGESEL_00), PAGESEL_00},
+
+	{DTYPE_GEN_LWRITE, 1, 0, 0, 10,
+	  sizeof(WRCMD1), WRCMD1},
+
+	{DTYPE_GEN_LWRITE, 1, 0, 0, 0,
+	  sizeof(WRCABCMB), WRCABCMB},
+
+	{DTYPE_GEN_LWRITE, 1, 0, 0, 0,
+	  sizeof(WRCABCMB_1), WRCABCMB_1},
+
+	{DTYPE_GEN_LWRITE, 1, 0, 0, 0,
+	  sizeof(WRCMD1), WRCMD1},
+
+	{DTYPE_DCS_WRITE, 1, 0, 0, 120,
+	  sizeof(SLPOUT), SLPOUT},
+
+	{DTYPE_DCS_WRITE, 1, 0, 0, 10,
+	  sizeof(DISPON), DISPON},
+};
+
 static struct dsi_cmd_desc novatek_video_off_cmds[] = {
 	{DTYPE_DCS_WRITE, 1, 0, 0, 150,
 		sizeof(SLPIN), SLPIN},
@@ -231,17 +280,28 @@ static struct dsi_cmd_desc novatek_video_off_cmds[] = {
 		sizeof(DISPOFF), DISPOFF},
 };
 
+static struct dsi_cmd_desc novatek_sharp_video_off_cmds[] = {
+	{DTYPE_DCS_WRITE, 1, 0, 0, 150,
+		sizeof(DISPOFF), DISPOFF},
+	{DTYPE_DCS_WRITE, 1, 0, 0, 150,
+		sizeof(SLPIN), SLPIN},
+};
 
 static struct mipi_panel_data mipi_pd = {
 	.panel_name = "JDI_DX16D100VM0AAA\n",
 	.on = {novatek_video_on_cmds
 			, ARRAY_SIZE(novatek_video_on_cmds)},
 	.off = {novatek_video_off_cmds
-			, ARRAY_SIZE(novatek_video_off_cmds)},			
+			, ARRAY_SIZE(novatek_video_off_cmds)},
 	};
 
-
-
+static struct mipi_panel_data mipi_sharp_pd = {
+	.panel_name = "SHARP\n",
+	.on = {novatek_sharp_video_on_cmds
+			, ARRAY_SIZE(novatek_sharp_video_on_cmds)},
+	.off = {novatek_sharp_video_off_cmds
+			, ARRAY_SIZE(novatek_sharp_video_off_cmds)},
+};
 
 static struct mipi_dsi_phy_ctrl dsi_video_mode_phy_db = {
 	/* DSI_BIT_CLK at 450MHz, 4 lane, RGB888 */
@@ -262,11 +322,13 @@ static struct mipi_dsi_phy_ctrl dsi_video_mode_phy_db = {
 
 static int __init mipi_novatek_tft_video_hd_pt_init(void)
 {
-	int ret;
+	int ret = 0;
 
 	printk("%s: start!\n", __func__);
 	if (msm_fb_detect_client("mipi_novatek_tft_video_hd"))
 		return 0;
+
+	printk("[LCD] LCD id : %d\n", g_lcd_id);
 
 	/* Landscape */
 	pinfo.xres = 720;
@@ -274,8 +336,8 @@ static int __init mipi_novatek_tft_video_hd_pt_init(void)
 	pinfo.mode2_xres = 0;
 	pinfo.mode2_yres = 0;
 #if defined(CONFIG_MACH_MELIUS)
-	pinfo.width = 78;
-	pinfo.height = 139;
+//	pinfo.width = 78; //Dibya
+//	pinfo.height = 139; //Dibya
 #endif
 	pinfo.mode2_bpp = 0;
 	pinfo.type = MIPI_VIDEO_PANEL;
@@ -302,9 +364,12 @@ static int __init mipi_novatek_tft_video_hd_pt_init(void)
 	pinfo.lcdc.v_pulse_width = 2;	/* tvpw */
 
 	pinfo.lcdc.border_clr = 0;		/* black */
-	pinfo.lcdc.underflow_clr = 0xff;	/* blue */
+	pinfo.lcdc.underflow_clr = 0x0;	/* black */
 
 	pinfo.lcdc.hsync_skew = 0;
+
+	pinfo.lcdc.border_clr = 0;		/* black */
+	pinfo.lcdc.underflow_clr = 0x0; /* black */
 
 	/* Backlight levels - controled via PMIC pwm gpio */
 	pinfo.bl_max = 255;
@@ -344,8 +409,18 @@ static int __init mipi_novatek_tft_video_hd_pt_init(void)
 	pinfo.mipi.dsi_phy_db = &dsi_video_mode_phy_db;
 
 
-	ret = mipi_novatek_disp_device_register(&pinfo, MIPI_DSI_PRIM,
-						MIPI_DSI_PANEL_720P_PT, &mipi_pd);
+	switch(g_lcd_id) {
+	case LCD_PANEL_SHARP:
+		ret = mipi_novatek_disp_device_register(&pinfo, MIPI_DSI_PRIM,
+							MIPI_DSI_PANEL_720P_PT, &mipi_sharp_pd);
+		break;
+	case LCD_PANEL_JDI:
+	default:
+		ret = mipi_novatek_disp_device_register(&pinfo, MIPI_DSI_PRIM,
+							MIPI_DSI_PANEL_720P_PT, &mipi_pd);
+		break;
+	};
+
 	if (ret)
 		pr_err("%s: failed to register device!\n", __func__);
 

@@ -22,8 +22,8 @@
 /* Slave address should be shifted to the right 1bit.
  * R/W bit should NOT be included.
  */
-//#define SEC_CHARGER_I2C_SLAVEADDR	0x6a
-#define SEC_CHARGER_I2C_SLAVEADDR	0x6B
+#define SEC_CHARGER_I2C_SLAVEADDR	0x6a
+
 /* BQ24157 Registers. */
 #define BQ24157_STATUS		0x00
 #define BQ24157_CONTROL		0x01

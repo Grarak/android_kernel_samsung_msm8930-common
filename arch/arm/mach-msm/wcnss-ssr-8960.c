@@ -50,6 +50,8 @@ static void smsm_state_cb_hdlr(void *data, uint32_t old_state,
 
 	pr_err("%s: smsm state changed\n", MODULE_NAME);
 
+	wcnss_riva_dump_pmic_regs();
+
 	if (!(new_state & SMSM_RESET))
 		return;
 
@@ -100,6 +102,7 @@ static irqreturn_t riva_wdog_bite_irq_hdlr(int irq, void *dev_id)
 		panic(MODULE_NAME ": Watchdog bite received from Riva");
 
 	ss_restart_inprogress = true;
+	wcnss_riva_log_debug_regs();
 	subsystem_restart_dev(riva_8960_dev);
 
 	return IRQ_HANDLED;

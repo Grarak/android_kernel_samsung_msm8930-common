@@ -1,16 +1,13 @@
 /*
 ** =========================================================================
 ** File:
-** 	ImmVibeSPI.c
+**     ImmVibeSPI.c
 **
 ** Description:
-** 	Device-dependent functions called by Immersion TSP API
-** 	to control PWM duty cycle, amp enable/disable, save IVT file, etc...
+**     Device-dependent functions called by Immersion TSP API
+**     to control PWM duty cycle, amp enable/disable, save IVT file, etc...
 **
 ** Portions Copyright (c) 2008-2010 Immersion Corporation. All Rights Reserved.
-** 	    Copyright (c) 2013 The CyanogenMod Project
-** 			  Daniel Hillenbrand <codeworkx@cyanogenmod.com>
-** 			  Dan Pasanen <dan.pasanen@gmail.com>
 **
 ** This file contains Original Code and/or Modifications of Original Code
 ** as defined in and that are subject to the GNU Public License v2 -
@@ -42,23 +39,37 @@
 
 static bool g_bampenabled;
 
-unsigned long pwm_val = 100;
+struct pm_gpio vib_pwm = {
+				.direction = PM_GPIO_DIR_OUT,
+				.output_buffer = 0,
+				.output_value = 0,
+				.pull = PM_GPIO_PULL_NO,
+				.vin_sel = 2,
+				.out_strength = PM_GPIO_STRENGTH_HIGH,
+				.function = PM_GPIO_FUNC_1,
+				.inv_int_pol = 0,
+			};
+
 
 static int32_t vibe_set_pwm_freq(int nForce)
 {
 	/* Put the MND counter in reset mode for programming */
 	HWIO_OUTM(GP_NS_REG, HWIO_GP_NS_REG_MNCNTR_EN_BMSK, 0);
 	HWIO_OUTM(GP_NS_REG, HWIO_GP_NS_REG_PRE_DIV_SEL_BMSK,
-	 3 << HWIO_GP_NS_REG_PRE_DIV_SEL_SHFT);
+	 2 << HWIO_GP_NS_REG_PRE_DIV_SEL_SHFT);
 	HWIO_OUTM(GP_NS_REG, HWIO_GP_NS_REG_SRC_SEL_BMSK,
-	 0 << HWIO_GP_NS_REG_SRC_SEL_SHFT);
+	 0 << HWIO_GP_NS_REG_SRC_SEL_SHFT); /* select clock source as pxo */
 	HWIO_OUTM(GP_NS_REG, HWIO_GP_NS_REG_MNCNTR_MODE_BMSK,
 	 2 << HWIO_GP_NS_REG_MNCNTR_MODE_SHFT);
 	HWIO_OUTM(GP_MD_REG, HWIO_GP_MD_REG_M_VAL_BMSK,
 	 g_nlra_gp_clk_m << HWIO_GP_MD_REG_M_VAL_SHFT);
 	if (nForce > 0)
 #if defined(CONFIG_MOTOR_DRV_MAX77693)
-		g_nforce_32 = ((nForce * g_nlra_gp_clk_pwm_mul) >> 8) + 8;
+#if defined(CONFIG_MACH_JF_DCM)
+		g_nforce_32 = ((nForce * g_nlra_gp_clk_pwm_mul) >> 8) + 22;
+#else
+		g_nforce_32 = ((nForce * g_nlra_gp_clk_pwm_mul) >> 8) + 10;
+#endif
 #else
 		g_nforce_32 = ((nForce * g_nlra_gp_clk_pwm_mul) >> 8) + 1;
 #endif
@@ -114,42 +125,24 @@ static int32_t vibe_pwm_onoff(u8 onoff)
 */
 static int32_t ImmVibeSPI_ForceOut_AmpDisable(u_int8_t nActuatorIndex)
 {
+
 	if (g_bampenabled) {
 		g_bampenabled = false;
-		if(vibrator_drvdata.power_onoff)
+		if (vibrator_drvdata.power_onoff)
 			vibrator_drvdata.power_onoff(0);
 		if (vibrator_drvdata.vib_model == HAPTIC_PWM) {
-			gpio_tlmm_config(
-				GPIO_CFG(vibrator_drvdata.vib_pwm_gpio,
-					0, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN,
-					GPIO_CFG_2MA),
-				1);
+			gpio_tlmm_config(GPIO_CFG(vibrator_drvdata.\
+			vib_pwm_gpio, 0, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, \
+			GPIO_CFG_2MA), 1);
 			gpio_set_value(vibrator_drvdata.vib_pwm_gpio, \
-				VIBRATION_OFF);
-#ifndef CONFIG_MOTOR_DRV_MAX77693
-			gpio_direction_output(vibrator_drvdata.vib_en_gpio,\
-				VIBRATION_OFF);
-#endif
-		}
-		if (!vibrator_drvdata.is_no_haptic_pwr) {
-			gpio_tlmm_config(
-				GPIO_CFG(vibrator_drvdata.haptic_pwr_en_gpio,
-					0, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN,
-					GPIO_CFG_2MA),
-				1);
-			if (vibrator_drvdata.is_pmic_haptic_pwr_en)
-				gpio_direction_output(
-					vibrator_drvdata.haptic_pwr_en_gpio, 1);
-			else
-				gpio_direction_output(
-					vibrator_drvdata.haptic_pwr_en_gpio, 0);
+			    VIBRATION_OFF);
 		}
 		printk(KERN_DEBUG "tspdrv: %s\n", __func__);
+#if defined(CONFIG_MOTOR_DRV_MAX77693)
+		max77693_vibtonz_en(0);
+#endif
 	}
 
-#if defined(CONFIG_MOTOR_DRV_MAX77693)
-	max77693_vibtonz_en(0);
-#endif
 	return VIBE_S_SUCCESS;
 }
 
@@ -160,151 +153,32 @@ static int32_t ImmVibeSPI_ForceOut_AmpEnable(u_int8_t nActuatorIndex)
 {
 	if (!g_bampenabled) {
 		g_bampenabled = true;
-		if(vibrator_drvdata.power_onoff)
+		if (vibrator_drvdata.power_onoff)
 			vibrator_drvdata.power_onoff(1);
 		if (vibrator_drvdata.vib_model == HAPTIC_PWM) {
-			gpio_tlmm_config(
-				GPIO_CFG(vibrator_drvdata.vib_pwm_gpio,
-					2, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN,
-					GPIO_CFG_2MA),
-				1);
-#ifndef CONFIG_MOTOR_DRV_MAX77693
-			gpio_direction_output(vibrator_drvdata.vib_en_gpio,\
-				VIBRATION_ON);
-#endif
-		}
-		if (!vibrator_drvdata.is_no_haptic_pwr) {
-			if (vibrator_drvdata.is_pmic_haptic_pwr_en)
-				gpio_direction_output(
-					vibrator_drvdata.haptic_pwr_en_gpio, 0);
-			else
-				gpio_direction_output(
-					vibrator_drvdata.haptic_pwr_en_gpio, 1);
+			gpio_tlmm_config(GPIO_CFG(vibrator_drvdata.\
+			vib_pwm_gpio, 2, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, \
+			GPIO_CFG_2MA), 1);
 		}
 		printk(KERN_DEBUG "tspdrv: %s\n", __func__);
+#if defined(CONFIG_MOTOR_DRV_MAX77693)
+		max77693_vibtonz_en(1);
+#endif
 	}
 
-#if defined(CONFIG_MOTOR_DRV_MAX77693)
-	max77693_vibtonz_en(1);
-#endif
 	return VIBE_S_SUCCESS;
 }
-#ifndef CONFIG_MOTOR_DRV_MAX77693
-static int32_t vibe_set_haptic_pwr_en(void)
-{
-	int ret;
 
-	/* set gpio config	*/
-	if (vibrator_drvdata.is_pmic_haptic_pwr_en) {
-		struct pm_gpio pwr_ena = {
-			.direction = PM_GPIO_DIR_OUT,
-			.output_buffer = 0,
-			.output_value = 0,
-			.pull = PM_GPIO_PULL_NO,
-			.vin_sel = 2,
-			.out_strength = PM_GPIO_STRENGTH_HIGH,
-			.function = PM_GPIO_FUNC_1,
-			.inv_int_pol = 0,
-		};
-
-		ret = gpio_request(vibrator_drvdata.haptic_pwr_en_gpio, \
-			"Haptic pwr enable");
-		if (ret < 0) {
-			printk(KERN_ERR "Haptic enable gpio_request is"\
-				" failed\n");
-			return 1;
-		}
-
-		ret = pm8xxx_gpio_config(vibrator_drvdata.haptic_pwr_en_gpio, \
-				&pwr_ena);
-		if (ret < 0) {
-			printk(KERN_ERR "failed to configure Haptic enable"\
-				" pmic gpio\n");
-			return 1;
-		}
-	} else {
-		ret = gpio_request(vibrator_drvdata.haptic_pwr_en_gpio,\
-				"Haptic pwr enable");
-		if (ret < 0) {
-			printk(KERN_ERR "Haptic pwr enable gpio_request is"\
-				" failed\n");
-			return 1;
-		}
-	}
-	return 0;
-}
-
-static int32_t vibe_set_haptic_vib_en(void)
-{
-	int ret;
-
-	if (vibrator_drvdata.is_pmic_vib_en) {
-		struct pm_gpio vib_ena = {
-			.direction = PM_GPIO_DIR_OUT,
-			.output_buffer = 0,
-			.output_value = 0,
-			.pull = PM_GPIO_PULL_NO,
-			.vin_sel = 2,
-			.out_strength = PM_GPIO_STRENGTH_HIGH,
-			.function = PM_GPIO_FUNC_1,
-			.inv_int_pol = 0,
-		};
-
-		ret = gpio_request(vibrator_drvdata.vib_en_gpio, \
-			"vib enable");
-		if (ret < 0) {
-			printk(KERN_ERR "vib enable gpio_request is"\
-				" failed\n");
-			return 1;
-		}
-
-		ret = pm8xxx_gpio_config(vibrator_drvdata.vib_en_gpio, \
-				&vib_ena);
-		if (ret < 0) {
-			printk(KERN_ERR "failed to configure vib"\
-				" enable pmic gpio\n");
-			return 1;
-		}
-	} else {
-		ret = gpio_request(vibrator_drvdata.vib_en_gpio, \
-			"vib enable");
-		if (ret < 0) {
-			printk(KERN_ERR "vib enable gpio_request is"\
-				" failed\n");
-			return 1;
-		}
-	}
-	return 0;
-}
-#endif
 /*
 ** Called at initialization time to set PWM freq,
 ** disable amp, etc...
 */
 static int32_t ImmVibeSPI_ForceOut_Initialize(void)
 {
+	int ret;
 	DbgOut((KERN_DEBUG "ImmVibeSPI_ForceOut_Initialize.\n"));
 	/* to force ImmVibeSPI_ForceOut_AmpDisable disabling the amp */
 	g_bampenabled = true;
-
-	/* set Vibrator IC VDD */
-#ifndef CONFIG_MOTOR_DRV_MAX77693
-	if (!vibrator_drvdata.is_no_haptic_pwr && vibe_set_haptic_pwr_en())
-		goto err1;
-#endif
-	if (vibrator_drvdata.vib_model == HAPTIC_PWM) {
-		/* set Vibrator IC PWM */
-		gpio_tlmm_config(
-			GPIO_CFG(vibrator_drvdata.vib_pwm_gpio,
-				2, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN,
-				GPIO_CFG_2MA),
-			1);
-#ifndef CONFIG_MOTOR_DRV_MAX77693
-		/* set Vibrator IC EN */
-		if (vibe_set_haptic_vib_en())
-			goto err2;
-#endif
-	}
 
 	/*
 	** Disable amp.
@@ -312,16 +186,33 @@ static int32_t ImmVibeSPI_ForceOut_Initialize(void)
 	** ImmVibeSPI_ForceOut_AmpDisable for each actuator
 	** (provide the actuator index as input argument).
 	*/
+
+	/* set gpio config	*/
+	if (vibrator_drvdata.vib_model == HAPTIC_PWM) {
+		if (vibrator_drvdata.is_pmic_vib_pwm) {
+			ret = gpio_request(vibrator_drvdata.vib_pwm_gpio, \
+				"vib pwm");
+			if (ret < 0) {
+				printk(KERN_ERR"vib pwm gpio_request is failed\n");
+				goto err2;
+			}
+
+			ret = pm8xxx_gpio_config(vibrator_drvdata.vib_pwm_gpio,\
+					&vib_pwm);
+			if (ret < 0) {
+				printk(KERN_ERR "failed to configure vib pwm pmic gpio\n");
+				goto err2;
+			}
+		} else
+			gpio_tlmm_config(GPIO_CFG(vibrator_drvdata.vib_pwm_gpio,
+			2, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA),
+			1);
+	}
 	ImmVibeSPI_ForceOut_AmpDisable(0);
 	return VIBE_S_SUCCESS;
-#ifndef CONFIG_MOTOR_DRV_MAX77693
+
 err2:
-	if (!vibrator_drvdata.is_no_haptic_pwr)
-		gpio_free(vibrator_drvdata.haptic_pwr_en_gpio);
-err1:
-	;
 	return VIBE_E_FAIL;
-#endif
 }
 
 /*
@@ -338,11 +229,6 @@ static int32_t ImmVibeSPI_ForceOut_Terminate(void)
 	** (provide the actuator index as input argument).
 	*/
 	ImmVibeSPI_ForceOut_AmpDisable(0);
-#ifndef CONFIG_MOTOR_DRV_MAX77693
-	if (vibrator_drvdata.vib_model == HAPTIC_PWM)
-		gpio_free(vibrator_drvdata.vib_en_gpio);
-	gpio_free(vibrator_drvdata.haptic_pwr_en_gpio);
-#endif
 	return VIBE_S_SUCCESS;
 }
 
@@ -360,10 +246,9 @@ static int32_t ImmVibeSPI_ForceOut_SetSamples(u_int8_t nActuatorIndex,
 	case 8:
 		/* pForceOutputBuffer is expected to contain 1 byte */
 		if (nBufferSizeInBytes != 1) {
-			DbgOut(KERN_ERR "[ImmVibeSPI]"\
-				" ImmVibeSPI_ForceOut_SetSamples"\
-				" nBufferSizeInBytes =  %d\n",
-				nBufferSizeInBytes);
+			DbgOut(KERN_ERR
+			"[ImmVibeSPI] ImmVibeSPI_ForceOut_SetSamples nBufferSizeInBytes =  %d\n",
+			nBufferSizeInBytes);
 			return VIBE_E_FAIL;
 		}
 		nforce = pForceOutputBuffer[0];
@@ -380,8 +265,6 @@ static int32_t ImmVibeSPI_ForceOut_SetSamples(u_int8_t nActuatorIndex,
 		/* Unexpected bit depth */
 		return VIBE_E_FAIL;
 	}
-
-	nforce = nforce * pwm_val / 100;
 
 	if (nforce == 0) {
 		/* Set 50% duty cycle or disable amp */
@@ -404,54 +287,6 @@ static int32_t ImmVibeSPI_ForceOut_SetSamples(u_int8_t nActuatorIndex,
 	return VIBE_S_SUCCESS;
 }
 
-static ssize_t pwm_val_show(struct device *dev, struct device_attribute *attr,
-                              char *buf)
-{
-        int count;
-
-        count = sprintf(buf, "%lu\n", pwm_val);
-        pr_debug("[VIB] pwm_val: %lu\n", pwm_val);
-
-        return count;
-}
-
-ssize_t pwm_val_store(struct device *dev, struct device_attribute *attr,
-                        const char *buf, size_t size)
-{
-        if (kstrtoul(buf, 0, &pwm_val))
-
-        pr_err("[VIB] %s: error on storing pwm_val\n", __func__);
-        pr_info("[VIB] %s: pwm_val=%lu\n", __func__, pwm_val);
-
-        /* make sure new pwm duty is in range */
-        if(pwm_val > 100)
-                pwm_val = 100;
-        else if (pwm_val < 0)
-                pwm_val = 0;
-
-        return size;
-}
-
-static DEVICE_ATTR(pwm_val, S_IRUGO | S_IWUSR,
-    pwm_val_show, pwm_val_store);
-
-static int create_vibrator_sysfs(void)
-{
-        int ret;
-        struct kobject *vibrator_kobj;
-        vibrator_kobj = kobject_create_and_add("vibrator", NULL);
-        if (unlikely(!vibrator_kobj))
-                return -ENOMEM;
-
-        ret = sysfs_create_file(vibrator_kobj, &dev_attr_pwm_val.attr);
-        if (unlikely(ret < 0)) {
-                pr_err("[VIB] sysfs_create_file failed: %d\n", ret);
-                return ret;
-        }
-
-        return 0;
-}
-
 /*
 ** Called to get the device name (device name must be returned as ANSI char)
 */
@@ -460,4 +295,3 @@ static int32_t ImmVibeSPI_Device_GetName(
 {
 	return VIBE_S_SUCCESS;
 }
-

@@ -1420,7 +1420,7 @@ static long venc_set_vui_timing_info(struct video_client_ctx *client_ctx,
 	if (!client_ctx)
 		return -EINVAL;
 	if (inst->framerate_mode == VENC_MODE_VFR) {
-		WFD_MSG_ERR("VUI timing info not suported in VFR mode ");
+		WFD_MSG_INFO("VUI timing info not suported in VFR mode ");
 		return -EINVAL;
 	}
 	vcd_property_hdr.prop_id = VCD_I_ENABLE_VUI_TIMING_INFO;
@@ -2059,7 +2059,11 @@ static long venc_alloc_recon_buffers(struct v4l2_subdev *sd, void *arg)
 	}
 	heap_mask = ION_HEAP(ION_CP_MM_HEAP_ID);
 	heap_mask |= inst->secure ? 0 : ION_HEAP(ION_IOMMU_HEAP_ID);
+#if !defined(CONFIG_MSM_IOMMU) && defined(CONFIG_SEC_PRODUCT_8960)
+	ion_flags |= inst->secure ? ION_SECURE : ION_FORCE_CONTIGUOUS;
+#else
 	ion_flags |= inst->secure ? ION_SECURE : 0;
+#endif
 
 	if (vcd_get_ion_status()) {
 		for (i = 0; i < 4; ++i) {

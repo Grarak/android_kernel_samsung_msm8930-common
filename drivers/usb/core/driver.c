@@ -1396,7 +1396,6 @@ int usb_suspend(struct device *dev, pm_message_t msg)
 			return -EBUSY;
 		}
 	}
-
 	unbind_no_pm_drivers_interfaces(udev);
 
 	/* From now on we are sure all drivers support suspend/resume
@@ -1757,7 +1756,9 @@ static int autosuspend_check(struct usb_device *udev)
 		}
 	}
 	if (w && !device_can_wakeup(&udev->dev)) {
+#ifndef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
 		dev_dbg(&udev->dev, "remote wakeup needed for autosuspend\n");
+#endif
 		return -EOPNOTSUPP;
 	}
 	udev->do_remote_wakeup = w;

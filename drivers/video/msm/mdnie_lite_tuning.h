@@ -19,12 +19,9 @@
 #ifndef _MDNIE_LITE_TUNING_H_
 #define _MDNIE_LITE_TUNING_H_
 
-#if defined (CONFIG_FB_MSM_MIPI_HIMAX_TFT_VIDEO_WVGA_PT)
-#define MDNIE_TUNE_FIRST_SIZE 113
-#elif defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_QHD_PT)\
-	|| defined(CONFIG_FB_MSM_MIPI_AMS367_OLED_VIDEO_WVGA_PT_PANEL)
+#define LDI_COORDINATE_REG 0xA1
+
 #define MDNIE_TUNE_FIRST_SIZE 108
-#endif
 #define MDNIE_TUNE_SECOND_SIZE 5
 
 #define MDNIE_COLOR_BLIND_FIRST_SIZE 118
@@ -97,7 +94,9 @@ enum Lcd_mDNIe_Negative {
 enum Background_Mode {
 	DYNAMIC_MODE = 0,
 	STANDARD_MODE,
+#if !defined(CONFIG_SUPPORT_DISPLAY_OCTA_TFT)
 	NATURAL_MODE,
+#endif
 	MOVIE_MODE,
 	AUTO_MODE,
 	MAX_BACKGROUND_MODE,
@@ -124,11 +123,11 @@ struct mdnie_lite_tun_type {
 	enum Lcd_mDNIe_Negative negative;
 	enum ACCESSIBILITY blind;
 };
-#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_QHD_PT)
-void coordinate_tunning(int x, int y);
-#endif
+
 void mdnie_lite_tuning_init(void);
 void init_mdnie_class(void);
 void is_negative_on(void);
+
+void coordinate_tunning(int x, int y);
 
 #endif /*_MDNIE_LITE_TUNING_H_*/

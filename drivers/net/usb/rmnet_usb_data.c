@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -388,6 +388,8 @@ static __be16 rmnet_ip_type_trans(struct sk_buff *skb,
 {
 	__be16	protocol = 0;
 
+	skb->dev = dev;
+
 	switch (skb->data[0] & 0xf0) {
 	case 0x40:
 		protocol = htons(ETH_P_IP);
@@ -423,6 +425,7 @@ static void rmnet_usb_rx_complete(struct urb *rx_urb)
 			/*map urb to actual network iface based on mux id*/
 			unet_id = unet_offset + mux_id;
 			skb->dev = unet_list[unet_id]->net;
+			entry->dev = unet_list[unet_id];
 		}
 	}
 
@@ -705,6 +708,7 @@ static int rmnet_usb_probe(struct usb_interface *iface,
 	int			status = 0;
 	unsigned int		i, unet_id, rdev_cnt, n = 0;
 	bool			mux;
+	struct rmnet_ctrl_dev	*dev;
 
 	udev = interface_to_usbdev(iface);
 
@@ -753,8 +757,7 @@ static int rmnet_usb_probe(struct usb_interface *iface,
 		status = device_create_file(&unet->net->dev,
 				&dev_attr_dbg_mask);
 		if (status) {
-			free_netdev(unet->net);
-			usb_put_dev(udev);
+			usbnet_disconnect(iface);
 			goto out;
 		}
 
@@ -762,8 +765,7 @@ static int rmnet_usb_probe(struct usb_interface *iface,
 				&unet->data[1]);
 		if (status) {
 			device_remove_file(&unet->net->dev, &dev_attr_dbg_mask);
-			free_netdev(unet->net);
-			usb_put_dev(udev);
+			usbnet_disconnect(iface);
 			goto out;
 		}
 
@@ -789,13 +791,17 @@ static int rmnet_usb_probe(struct usb_interface *iface,
 
 out:
 	for (i = 0; i < n; i++) {
+		/* This cleanup happens only for MUX case */
 		unet_id = i + info->data * no_rmnet_insts_per_dev;
-		rmnet_usb_ctrl_cleanup(
-			(struct rmnet_ctrl_dev *)unet_list[unet_id]->data[1]);
-		device_remove_file(&unet_list[unet_id]->net->dev,
-				&dev_attr_dbg_mask);
-		free_netdev(unet_list[unet_id]->net);
-		usb_put_dev(udev);
+		unet = unet_list[unet_id];
+		dev = (struct rmnet_ctrl_dev *)unet->data[1];
+
+		rmnet_usb_data_debugfs_cleanup(unet);
+		rmnet_usb_ctrl_disconnect(dev);
+		device_remove_file(&unet->net->dev, &dev_attr_dbg_mask);
+		usb_set_intfdata(iface, unet_list[unet_id]);
+		usbnet_disconnect(iface);
+		unet_list[unet_id] = NULL;
 	}
 
 	return status;
@@ -899,6 +905,9 @@ static const struct usb_device_id vidpids[] = {
 	},
 	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x9079, 8),
 	.driver_info = (unsigned long)&rmnet_usb_info,
+	},
+	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x908A, 6), /*mux over hsic mdm*/
+	.driver_info = (unsigned long)&rmnet_info,
 	},
 
 	{ }, /* Terminating entry */

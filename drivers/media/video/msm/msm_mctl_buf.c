@@ -453,7 +453,6 @@ int msm_mctl_buf_done_proc(
 		buf->vidbuf.v4l2_buf.timestamp = cam_ts->timestamp;
 		buf->vidbuf.v4l2_buf.sequence  = cam_ts->frame_id;
 	}
-	pcam_inst->sequence = buf->vidbuf.v4l2_buf.sequence;
 	D("%s Notify user about buffer %d image_mode %d frame_id %d", __func__,
 		buf->vidbuf.v4l2_buf.index, pcam_inst->image_mode,
 		buf->vidbuf.v4l2_buf.sequence);
@@ -643,7 +642,7 @@ struct msm_cam_v4l2_dev_inst *msm_mctl_get_pcam_inst(
 	if (buf_handle->buf_lookup_type == BUF_LOOKUP_BY_INST_HANDLE) {
 		if (buf_handle->inst_handle == 0) {
 			pr_err("%sBuffer instance handle not initialised",
-				 __func__);
+				__func__);
 			return pcam_inst;
 		} else {
 			idx = GET_MCTLPP_INST_IDX(buf_handle->inst_handle);
@@ -660,7 +659,7 @@ struct msm_cam_v4l2_dev_inst *msm_mctl_get_pcam_inst(
 			} else {
 				pcam_inst = pcam->mctl_node.dev_inst[idx];
 			}
-		}
+		}	
 	} else if ((buf_handle->buf_lookup_type == BUF_LOOKUP_BY_IMG_MODE)
 		&& (buf_handle->image_mode >= 0 &&
 		buf_handle->image_mode < MSM_V4L2_EXT_CAPTURE_MODE_MAX)) {
@@ -870,7 +869,7 @@ int msm_mctl_buf_done_pp(struct msm_cam_media_controller *pmctl,
 	cam_ts.present = 1;
 	cam_ts.timestamp = ret_frame->timestamp;
 	cam_ts.frame_id   = ret_frame->frame_id;
-	if (ret_frame->dirty || (ret_frame->frame_id < pcam_inst->sequence))
+	if (ret_frame->dirty)
 		/* the frame is dirty, not going to disptach to app */
 		rc = msm_mctl_release_free_buf(pmctl, pcam_inst, frame);
 	else

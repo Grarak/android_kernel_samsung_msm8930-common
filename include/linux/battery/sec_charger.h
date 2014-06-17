@@ -21,8 +21,7 @@
 
 #include <linux/battery/sec_charging_common.h>
 
-#if defined(CONFIG_CHARGER_DUMMY) || \
-	defined(CONFIG_CHARGER_PM8917)
+#if defined(CONFIG_CHARGER_DUMMY)
 #include <linux/battery/charger/dummy_charger.h>
 #elif defined(CONFIG_CHARGER_MAX8903)
 #include <linux/battery/charger/max8903_charger.h>
@@ -30,20 +29,12 @@
 #include <linux/battery/charger/smb328_charger.h>
 #elif defined(CONFIG_CHARGER_SMB347)
 #include <linux/battery/charger/smb347_charger.h>
-#elif defined(CONFIG_CHARGER_SMB358)
-#include <linux/battery/charger/smb358_charger.h>
 #elif defined(CONFIG_CHARGER_BQ24157)
 #include <linux/battery/charger/bq24157_charger.h>
 #elif defined(CONFIG_CHARGER_BQ24190) || \
 		defined(CONFIG_CHARGER_BQ24191)
 #include <linux/battery/charger/bq24190_charger.h>
-#elif defined(CONFIG_CHARGER_BQ24260)
-#include <linux/battery/charger/bq24260_charger.h>
-#elif defined(CONFIG_CHARGER_NCP1851)
-#include <linux/battery/charger/ncp1851_charger.h>
-#elif defined(CONFIG_CHARGER_TSU8111)
-#include <linux/battery/charger/tsu8111_charger.h>
-#elif defined(CONFIG_CHARGER_MAX77XXX)
+#elif defined(CONFIG_CHARGER_MAX77693) || defined(CONFIG_MACH_MELIUS)
 #include <linux/battery/charger/max77693_charger.h>
 #endif
 
@@ -59,7 +50,6 @@ struct sec_charger_info {
 
 	/* charging current : + charging, - OTG */
 	int charging_current;
-	unsigned charging_current_max;
 
 	/* register programming */
 	int reg_addr;
