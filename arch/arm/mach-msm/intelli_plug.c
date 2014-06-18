@@ -18,7 +18,6 @@
 #include <linux/sched.h>
 #include <linux/mutex.h>
 #include <linux/module.h>
-#include <linux/rq_stats.h>
 #include <linux/slab.h>
 #include <linux/input.h>
 #include <linux/cpufreq.h>
@@ -32,18 +31,15 @@
 #undef DEBUG_INTELLI_PLUG
 
 #define INTELLI_PLUG_MAJOR_VERSION	3
-#define INTELLI_PLUG_MINOR_VERSION	2
+#define INTELLI_PLUG_MINOR_VERSION	5
 
-#define DEF_SAMPLING_MS			(1000)
-#define BUSY_SAMPLING_MS		(500)
+#define DEF_SAMPLING_MS			(268)
 
-#define DUAL_PERSISTENCE		7
-#define TRI_PERSISTENCE			5
-#define QUAD_PERSISTENCE		3
+#define DUAL_PERSISTENCE		(2500 / DEF_SAMPLING_MS)
+#define TRI_PERSISTENCE			(1700 / DEF_SAMPLING_MS)
+#define QUAD_PERSISTENCE		(1000 / DEF_SAMPLING_MS)
 
-#define BUSY_PERSISTENCE		10
-
-#define DOWN_FACTOR			2
+#define BUSY_PERSISTENCE		(5000 / DEF_SAMPLING_MS)
 
 static DEFINE_MUTEX(intelli_plug_mutex);
 
@@ -56,9 +52,6 @@ static struct workqueue_struct *intelliplug_boost_wq;
 static unsigned int intelli_plug_active = 0;
 module_param(intelli_plug_active, uint, 0644);
 
-static unsigned int eco_mode_active = 0;
-module_param(eco_mode_active, uint, 0644);
-
 static unsigned int touch_boost_active = 1;
 module_param(touch_boost_active, uint, 0644);
 
@@ -69,7 +62,6 @@ module_param(nr_run_profile_sel, uint, 0644);
 static unsigned int sampling_time = DEF_SAMPLING_MS;
 
 static unsigned int persist_count = 0;
-static unsigned int busy_persist_count = 0;
 
 static bool suspended = false;
 
@@ -83,34 +75,50 @@ static DEFINE_PER_CPU(struct ip_cpu_info, ip_info);
 static unsigned int screen_off_max = UINT_MAX;
 module_param(screen_off_max, uint, 0644);
 
+#define CAPACITY_RESERVE	50
+
+#if defined(CONFIG_ARCH_MSM8960) || defined(CONFIG_ARCH_APQ8064) || \
+defined(CONFIG_ARCH_MSM8974) || defined(CONFIG_ARCH_MSM8226) || \
+defined(CONFIG_ARCH_MSM8926)
+#define THREAD_CAPACITY	(339 - CAPACITY_RESERVE)
+#else
+#define THREAD_CAPACITY	(250 - CAPACITY_RESERVE)
+#endif
+
+#define MULT_FACTOR	4
+#define DIV_FACTOR	100000
 #define NR_FSHIFT	3
 static unsigned int nr_fshift = NR_FSHIFT;
 module_param(nr_fshift, uint, 0644);
 
 static unsigned int nr_run_thresholds_balance[] = {
-/* 	1,  2,  3,  4 - on-line cpus target */
-	5,  7,  9,  UINT_MAX /* avg run threads * 2 (e.g., 9 = 2.25 threads) */
-	};
+	(THREAD_CAPACITY * 625 * MULT_FACTOR) / DIV_FACTOR,
+	(THREAD_CAPACITY * 875 * MULT_FACTOR) / DIV_FACTOR,
+	(THREAD_CAPACITY * 1125 * MULT_FACTOR) / DIV_FACTOR,
+	UINT_MAX
+};
 
 static unsigned int nr_run_thresholds_performance[] = {
-/* 	1,  2,  3,  4 - on-line cpus target */
-	3,  5,  7,  UINT_MAX /* avg run threads * 2 (e.g., 9 = 2.25 threads) */
-	};
+	(THREAD_CAPACITY * 380 * MULT_FACTOR) / DIV_FACTOR,
+	(THREAD_CAPACITY * 625 * MULT_FACTOR) / DIV_FACTOR,
+	(THREAD_CAPACITY * 875 * MULT_FACTOR) / DIV_FACTOR,
+	UINT_MAX
+};
 
 static unsigned int nr_run_thresholds_conservative[] = {
-/* 	1,  2,  3,  4 - on-line cpus target */
-	5, 13, 14,  UINT_MAX /* avg run threads * 2 (e.g., 9 = 2.25 threads) */
+	(THREAD_CAPACITY * 875 * MULT_FACTOR) / DIV_FACTOR,
+	(THREAD_CAPACITY * 1625 * MULT_FACTOR) / DIV_FACTOR,
+	(THREAD_CAPACITY * 2125 * MULT_FACTOR) / DIV_FACTOR,
+	UINT_MAX
 };
 
 static unsigned int nr_run_thresholds_eco[] = {
-/*      1,  2, - on-line cpus target */
-        3,  UINT_MAX /* avg run threads * 2 (e.g., 9 = 2.25 threads) */
-        };
+        (THREAD_CAPACITY * 380 * MULT_FACTOR) / DIV_FACTOR,
+	UINT_MAX
+};
 
 static unsigned int nr_run_thresholds_disable[] = {
-/* 	1,  2,  3,  4 - on-line cpus target */
-	0,  0,  0,  UINT_MAX /* avg run threads * 2 (e.g., 9 = 2.25 threads) */
-
+	0,  0,  0,  UINT_MAX
 };
 
 static unsigned int *nr_run_profiles[] = {
@@ -124,7 +132,8 @@ static unsigned int *nr_run_profiles[] = {
 #define NR_RUN_ECO_MODE_PROFILE	3
 #define NR_RUN_HYSTERESIS_QUAD	8
 #define NR_RUN_HYSTERESIS_DUAL	4
-#define CPU_NR_THRESHOLD	50
+
+#define CPU_NR_THRESHOLD	(12 * THREAD_CAPACITY / 100)
 
 static unsigned int cpu_nr_run_threshold = CPU_NR_THRESHOLD;
 module_param(cpu_nr_run_threshold, uint, 0644);
@@ -134,60 +143,8 @@ module_param(nr_run_hysteresis, uint, 0644);
 
 static unsigned int nr_run_last;
 
-static unsigned int NwNs_Threshold[] = { 19, 30,  19,  11,  19,  11, 0,  11};
-static unsigned int TwTs_Threshold[] = {140,  0, 140, 190, 140, 190, 0, 190};
-
 extern unsigned long avg_nr_running(void);
 extern unsigned long avg_cpu_nr_running(unsigned int cpu);
-
-static int mp_decision(void)
-{
-	static bool first_call = true;
-	int new_state = 0;
-	int nr_cpu_online;
-	int index;
-	unsigned int rq_depth;
-	static cputime64_t total_time = 0;
-	static cputime64_t last_time;
-	cputime64_t current_time;
-	cputime64_t this_time = 0;
-
-	current_time = ktime_to_ms(ktime_get());
-	if (first_call) {
-		first_call = false;
-	} else {
-		this_time = current_time - last_time;
-	}
-	total_time += this_time;
-
-	rq_depth = rq_info.rq_avg;
-#ifdef DEBUG_INTELLI_PLUG
-	pr_info(" rq_deptch = %u", rq_depth);
-#endif
-	nr_cpu_online = num_online_cpus();
-
-	if (nr_cpu_online) {
-		index = (nr_cpu_online - 1) * 2;
-		if ((nr_cpu_online < 4) &&
-			(rq_depth >= NwNs_Threshold[index])) {
-			if (total_time >= TwTs_Threshold[index]) {
-				new_state = 1;
-			}
-		} else if (rq_depth <= NwNs_Threshold[index+1]) {
-			if (total_time >= TwTs_Threshold[index+1] ) {
-				new_state = 0;
-			}
-		} else {
-			total_time = 0;
-		}
-	} else {
-		total_time = 0;
-	}
-
-	last_time = ktime_to_ms(ktime_get());
-
-	return new_state;
-}
 
 static unsigned int calculate_thread_stats(void)
 {
@@ -196,23 +153,17 @@ static unsigned int calculate_thread_stats(void)
 	unsigned int threshold_size;
 	unsigned int *current_profile;
 
-	if (!eco_mode_active ||
-		!(nr_run_profile_sel == NR_RUN_ECO_MODE_PROFILE)) {
-		current_profile = nr_run_profiles[nr_run_profile_sel];
+	current_profile = nr_run_profiles[nr_run_profile_sel];
+	if (num_possible_cpus() > 2)
 		threshold_size =
 			ARRAY_SIZE(nr_run_thresholds_balance);
+	else
+		threshold_size =
+			ARRAY_SIZE(nr_run_thresholds_eco);
+
 #ifdef DEBUG_INTELLI_PLUG
 		pr_info("intelliplug: full mode active!");
 #endif
-	}
-	else {
-		current_profile = nr_run_profiles[NR_RUN_ECO_MODE_PROFILE];
-		threshold_size =
-			ARRAY_SIZE(nr_run_thresholds_eco);
-#ifdef DEBUG_INTELLI_PLUG
-		pr_info("intelliplug: eco mode active!");
-#endif
-	}
 
 	nr_fshift = num_possible_cpus() - 1;
 
@@ -235,9 +186,10 @@ static void __cpuinit intelli_plug_boost_fn(struct work_struct *work)
 
 	int nr_cpus = num_online_cpus();
 
-	if (touch_boost_active)
-		if (nr_cpus < 2)
-			cpu_up(1);
+	if (intelli_plug_active)
+		if (touch_boost_active)
+			if (nr_cpus < 2)
+				cpu_up(1);
 }
 
 /*
@@ -288,7 +240,6 @@ static void __cpuinit intelli_plug_work_fn(struct work_struct *work)
 	unsigned int cpu_count = 0;
 	unsigned int nr_cpus = 0;
 
-	int decision = 0;
 	int i;
 
 	if (intelli_plug_active) {
@@ -298,40 +249,7 @@ static void __cpuinit intelli_plug_work_fn(struct work_struct *work)
 		pr_info("nr_run_stat: %u\n", nr_run_stat);
 #endif
 		cpu_count = nr_run_stat;
-		// detect artificial loads or constant loads
-		// using msm rqstats
 		nr_cpus = num_online_cpus();
-		if (!eco_mode_active && (nr_cpus >= 1 && nr_cpus < 4)) {
-			decision = mp_decision();
-			if (decision) {
-				switch (nr_cpus) {
-				case 2:
-					cpu_count = 3;
-#ifdef DEBUG_INTELLI_PLUG
-					pr_info("nr_run(2) => %u\n", nr_run_stat);
-#endif
-					break;
-				case 3:
-					cpu_count = 4;
-#ifdef DEBUG_INTELLI_PLUG
-					pr_info("nr_run(3) => %u\n", nr_run_stat);
-#endif
-					break;
-				}
-			}
-		}
-		/* it's busy.. lets help it a bit */
-		if (cpu_count > 2) {
-			if (busy_persist_count == 0) {
-				sampling_time = BUSY_SAMPLING_MS;
-				busy_persist_count = BUSY_PERSISTENCE;
-			}
-		} else {
-			if (busy_persist_count > 0)
-				busy_persist_count--;
-			else
-				sampling_time = DEF_SAMPLING_MS;
-		}
 
 		if (!suspended) {
 			switch (cpu_count) {
@@ -348,9 +266,6 @@ static void __cpuinit intelli_plug_work_fn(struct work_struct *work)
 				break;
 			case 2:
 				persist_count = DUAL_PERSISTENCE;
-				if (!decision)
-					persist_count =
-					DUAL_PERSISTENCE / DOWN_FACTOR;
 				if (nr_cpus < 2) {
 					for (i = 1; i < cpu_count; i++)
 						cpu_up(i);
@@ -363,9 +278,6 @@ static void __cpuinit intelli_plug_work_fn(struct work_struct *work)
 				break;
 			case 3:
 				persist_count = TRI_PERSISTENCE;
-				if (!decision)
-					persist_count =
-					TRI_PERSISTENCE / DOWN_FACTOR;
 				if (nr_cpus < 3) {
 					for (i = 1; i < cpu_count; i++)
 						cpu_up(i);
@@ -378,9 +290,6 @@ static void __cpuinit intelli_plug_work_fn(struct work_struct *work)
 				break;
 			case 4:
 				persist_count = QUAD_PERSISTENCE;
-				if (!decision)
-					persist_count =
-					QUAD_PERSISTENCE / DOWN_FACTOR;
 				if (nr_cpus < 4)
 					for (i = 1; i < cpu_count; i++)
 						cpu_up(i);
