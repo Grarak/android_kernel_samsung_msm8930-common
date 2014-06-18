@@ -31,6 +31,13 @@ out() {
 	exec /init
 }
 
+disableKnox() {
+	sed 's|ro.securestorage.knox=true|ro.securestorage.knox=false|g' -i /system/build.prop
+	sed 's|ro.build.selinux=1|ro.build.selinux=0|g' -i /system/build.prop
+	sed 's|ro.config.knox=1|ro.config.knox=0|g' -i /system/build.prop
+	sed 's|ro.config.tima=1|ro.config.tima=0|g' -i /system/build.prop
+}
+
 mv -f /res/sec442/* /
 
 rm -rf /system/lib/modules/*
@@ -39,5 +46,7 @@ ln -s /lib/modules/* /system/lib/modules/
 mv -f /res/prima/* /system/etc/firmware/wlan/prima
 
 [ -d /system/app/Synapse.apk ] || mv -f /res/synapse/Synapse.apk /system/app && chmod 644 /system/app/Synapse.apk
+
+disableKnox
 
 out
