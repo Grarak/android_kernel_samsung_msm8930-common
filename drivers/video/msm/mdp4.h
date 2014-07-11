@@ -36,7 +36,6 @@ extern u32 mdp_iommu_max_map_size;
 #define MDP4_BW_IB_FACTOR (210)	/* 2.10 */
 
 #define MDP_BUS_SCALE_AB_STEP (0x4000000)
-#define MDP_BUS_SCALE_INIT (0x10000000)
 
 #define MDP4_OVERLAYPROC0_BASE	0x10000
 #define MDP4_OVERLAYPROC1_BASE	0x18000
