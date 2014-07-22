@@ -5528,9 +5528,6 @@ void __init msm8930_melius_init(void)
 #ifdef CONFIG_MSM_CAMERA
 	msm8930_init_cam();
 #endif
-#ifdef CONFIG_CPU_FREQ_GOV_INTELLIDEMAND
-    id_set_two_phase_freq(1566000);
-#endif
 #ifdef CONFIG_SAMSUNG_CMC624
 	platform_device_register(&cmc624_i2c_gpio_device);
 #endif
